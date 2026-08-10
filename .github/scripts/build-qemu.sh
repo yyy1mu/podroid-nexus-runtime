@@ -8,6 +8,9 @@ ndk_root="${ANDROID_NDK_ROOT:?ANDROID_NDK_ROOT is required}"
 work_dir="$(mktemp -d)"
 trap 'rm -rf "$work_dir"' EXIT
 
+mkdir -p "$output_dir"
+output_dir="$(cd "$output_dir" && pwd)"
+
 llvm="$ndk_root/toolchains/llvm/prebuilt/linux-x86_64"
 prefix="$work_dir/deps"
 source_dir="$work_dir/src"
