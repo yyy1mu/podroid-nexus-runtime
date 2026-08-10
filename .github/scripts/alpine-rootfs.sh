@@ -4,7 +4,7 @@
 
 ALPINE_RELEASE="${ALPINE_RELEASE:-3.24.1}"
 ALPINE_BRANCH="${ALPINE_RELEASE%.*}"
-ALPINE_MIRROR="${ALPINE_MIRROR:-https://mirrors.ustc.edu.cn/alpine}"
+ALPINE_MIRROR="${ALPINE_MIRROR:-https://dl-cdn.alpinelinux.org/alpine}"
 
 alpine_prepare_apk() {
     local tools_dir="$1"

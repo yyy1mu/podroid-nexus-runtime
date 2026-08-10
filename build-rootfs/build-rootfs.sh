@@ -3,6 +3,7 @@ set -eu
 WORK_DIR="${WORK_DIR:-/work}"
 ROOTFS="${ROOTFS:-$WORK_DIR/rootfs}"
 APK_BIN="${APK_BIN:-apk}"
+ALPINE_MIRROR="${ALPINE_MIRROR:-https://mirrors.ustc.edu.cn/alpine}"
 
 # ALPINE_VERSION comes from the Dockerfile ENV (full release like 3.24.1).
 # Strip the patch component to get the major branch (e.g. 3.24) used in repo URLs.
@@ -11,12 +12,12 @@ ALPINE_BRANCH="${ALPINE_VERSION%.*}"
 
 mkdir -p "$ROOTFS/etc/apk"
 cat > "$ROOTFS/etc/apk/repositories" <<EOF
-https://mirrors.ustc.edu.cn/alpine/v${ALPINE_BRANCH}/main
-https://mirrors.ustc.edu.cn/alpine/v${ALPINE_BRANCH}/community
+${ALPINE_MIRROR}/v${ALPINE_BRANCH}/main
+${ALPINE_MIRROR}/v${ALPINE_BRANCH}/community
 EOF
 
-"$APK_BIN" -X "https://mirrors.ustc.edu.cn/alpine/v${ALPINE_BRANCH}/main" \
-    -X "https://mirrors.ustc.edu.cn/alpine/v${ALPINE_BRANCH}/community" \
+"$APK_BIN" -X "${ALPINE_MIRROR}/v${ALPINE_BRANCH}/main" \
+    -X "${ALPINE_MIRROR}/v${ALPINE_BRANCH}/community" \
     -U --allow-untrusted --root "$ROOTFS" --initdb add \
     alpine-base \
     openrc \

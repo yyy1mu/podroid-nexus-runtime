@@ -55,6 +55,7 @@ sudo install -m 0755 \
 sudo env \
     ALPINE_VERSION="$ALPINE_RELEASE" \
     SYSTEM_VERSION="$system_version" \
+    ALPINE_MIRROR="$ALPINE_MIRROR" \
     ROOTFS="$rootfs" \
     WORK_DIR="$repo_root/build-rootfs" \
     APK_BIN="$ALPINE_APK" \
