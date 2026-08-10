@@ -1,0 +1,44 @@
+#!/sbin/openrc-run
+description="opencode AI coding server (0.0.0.0:4096)"
+
+# Password override: put OC_PASSWORD=... in /etc/conf.d/podroid-opencode.
+[ -f /etc/conf.d/podroid-opencode ] && . /etc/conf.d/podroid-opencode
+: "${OC_PASSWORD:=secret}"
+
+depend() {
+    need podroid-bootstrap
+    after podroid-network
+    before podroid-ready
+}
+
+start() {
+    ebegin "Starting opencode server (0.0.0.0:4096)"
+    rm -f /run/podroid-opencode.pid
+    start-stop-daemon --start --background \
+        --pidfile /run/podroid-opencode.pid --make-pidfile \
+        --stdout /var/log/opencode.log --stderr /var/log/opencode.log \
+        --env "OPENCODE_SERVER_PASSWORD=${OC_PASSWORD}" \
+        --exec /usr/local/bin/opencode -- \
+        serve --hostname 0.0.0.0 --port 4096
+    _rc=$?
+    # --background returns 0 as soon as the child forks; poll the pidfile so a
+    # crash-on-launch (bad arg, port bound) still flips the rc.
+    if [ "$_rc" -eq 0 ]; then
+        _pid=$(cat /run/podroid-opencode.pid 2>/dev/null)
+        _i=0
+        while [ "$_i" -lt 10 ]; do
+            sleep 0.1
+            kill -0 "$_pid" 2>/dev/null && break
+            _i=$((_i + 1))
+        done
+        kill -0 "$_pid" 2>/dev/null || _rc=1
+    fi
+    [ "$_rc" -eq 0 ] || ewarn "opencode failed to start (see /var/log/opencode.log)"
+    eend $_rc
+}
+
+stop() {
+    ebegin "Stopping opencode server"
+    start-stop-daemon --stop --pidfile /run/podroid-opencode.pid 2>/dev/null
+    eend 0
+}

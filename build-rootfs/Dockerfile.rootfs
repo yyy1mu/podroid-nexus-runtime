@@ -22,7 +22,7 @@ RUN apk add --no-cache curl squashfs-tools tar openssl libcap-utils
 
 WORKDIR /work
 RUN curl -L -o minirootfs.tar.gz \
-    "https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_RELEASE%.*}/releases/${ALPINE_ARCH}/alpine-minirootfs-${ALPINE_RELEASE}-${ALPINE_ARCH}.tar.gz" \
+    "https://mirrors.ustc.edu.cn/alpine/v${ALPINE_RELEASE%.*}/releases/${ALPINE_ARCH}/alpine-minirootfs-${ALPINE_RELEASE}-${ALPINE_ARCH}.tar.gz" \
  && mkdir rootfs \
  && tar -xzf minirootfs.tar.gz -C rootfs \
  && rm minirootfs.tar.gz

@@ -342,6 +342,12 @@ class PodroidService : Service() {
                     if (rules.none { it.hostPort == X11Constants.AUDIO_PORT }) {
                         rules.add(com.excp.podroid.data.repository.PortForwardRule(X11Constants.AUDIO_PORT, X11Constants.AUDIO_PORT, "tcp", loopbackOnly = true))
                     }
+                    // Always-on opencode server forward (podroid-opencode serves
+                    // 0.0.0.0:4096). LAN-reachable like SSH: the server carries its
+                    // own OPENCODE_SERVER_PASSWORD auth, so no loopback pinning.
+                    if (rules.none { it.hostPort == OPENCODE_PORT }) {
+                        rules.add(com.excp.podroid.data.repository.PortForwardRule(OPENCODE_PORT, OPENCODE_PORT, "tcp"))
+                    }
 
                     val config = VmConfig(
                         ramMb = settingsRepository.getVmRamMbSnapshot(),
@@ -522,6 +528,7 @@ class PodroidService : Service() {
         const val ACTION_START   = "com.excp.podroid.action.START"
         const val ACTION_STOP    = "com.excp.podroid.action.STOP"
         const val SSH_HOST_PORT  = 9922
+        const val OPENCODE_PORT  = 4096
 
         fun start(context: Context) {
             val intent = Intent(context, PodroidService::class.java).apply {
