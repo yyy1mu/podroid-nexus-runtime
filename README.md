@@ -44,10 +44,15 @@ An unchanged component may be promoted from its previous verified release by
 setting its `*SourceTag` in `runtime.lock`; its binaries are copied and checked,
 not rebuilt. Clear that source tag only when the component itself changes.
 
-Every component archive has both an archive checksum and an internal manifest.
-The assembled runtime records all three component tags in `runtime.properties`,
-so an APK is reproducible without relying on short-lived Actions caches. Heavy
-native builds are never required by the Nexus app repository.
+Component releases are private drafts used only by the bundle workflow, keeping
+the public Releases page limited to complete, directly consumable runtime
+bundles. The drafts are removed after a successful bundle; a later release can
+promote unchanged components directly from the previous complete bundle. Every
+component archive has both an archive checksum and an internal
+manifest. The assembled runtime records all three component tags in
+`runtime.properties`, so an APK is reproducible without relying on short-lived
+Actions caches. Heavy native builds are never required by the Nexus app
+repository.
 
 ## Rootfs readiness contract
 

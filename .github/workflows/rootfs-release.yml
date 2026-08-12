@@ -114,12 +114,13 @@ jobs:
           tar --zstd -cf "$archive" -C bundle nexus-rootfs
           sha256sum "$archive" > "$archive.sha256"
 
-      - name: Publish rootfs release
+      - name: Publish internal rootfs component
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           archive="nexus-rootfs-${GITHUB_REF_NAME}.tar.zst"
           gh release create "$GITHUB_REF_NAME" \
             "$archive" "$archive.sha256" \
+            --draft \
             --title "Nexus Rootfs ${GITHUB_REF_NAME}" \
-            --notes "Alpine/OpenCode rootfs component. Built independently from the kernel and QEMU."
+            --notes "Internal component used to assemble ${GITHUB_REF_NAME%-rootfs}-bundle."

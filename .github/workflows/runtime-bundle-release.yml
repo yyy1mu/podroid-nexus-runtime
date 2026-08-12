@@ -105,5 +105,26 @@ jobs:
           archive="nexus-runtime-${GITHUB_REF_NAME}.tar.zst"
           gh release create "$GITHUB_REF_NAME" \
             "$archive" "$archive.sha256" \
+            --latest \
             --title "Nexus Runtime ${GITHUB_REF_NAME}" \
-            --notes "Assembled without native compilation from rootfs ${ROOTFS_TAG}, boot ${BOOT_TAG}, and QEMU ${QEMU_TAG}."
+            --notes "Complete Nexus Android runtime ${GITHUB_REF_NAME}. Includes the verified rootfs, kernel/initramfs, and QEMU Android binaries."
+
+      - name: Remove internal component drafts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ROOTFS_TAG: ${{ steps.components.outputs.rootfs }}
+          BOOT_TAG: ${{ steps.components.outputs.boot }}
+          QEMU_TAG: ${{ steps.components.outputs.qemu }}
+        run: |
+          for tag in "$ROOTFS_TAG" "$BOOT_TAG" "$QEMU_TAG"; do
+            release_id="$(
+              gh api --paginate \
+                "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+                | jq -r --arg tag "$tag" \
+                    '.[] | select(.tag_name == $tag and .draft == true) | .id' \
+                | head -n 1
+            )"
+            test -n "$release_id"
+            gh api --method DELETE \
+              "repos/$GITHUB_REPOSITORY/releases/$release_id"
+          done

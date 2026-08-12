@@ -105,12 +105,13 @@ jobs:
           tar --zstd -cf "$archive" -C bundle nexus-boot
           sha256sum "$archive" > "$archive.sha256"
 
-      - name: Publish boot release
+      - name: Publish internal boot component
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           archive="nexus-boot-${GITHUB_REF_NAME}.tar.zst"
           gh release create "$GITHUB_REF_NAME" \
             "$archive" "$archive.sha256" \
+            --draft \
             --title "Nexus Boot ${GITHUB_REF_NAME}" \
-            --notes "Kernel and matching initramfs component."
+            --notes "Internal component used to assemble ${GITHUB_REF_NAME%-boot}-bundle."

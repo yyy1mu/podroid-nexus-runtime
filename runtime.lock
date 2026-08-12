@@ -1,10 +1,10 @@
 # Every public component tag shares nexusReleaseVersion from release.properties.
-runtimeRootfsTag=v0.3.1-rootfs
-runtimeBootTag=v0.3.1-boot
-runtimeQemuTag=v0.3.1-qemu
+runtimeRootfsTag=v0.3.2-rootfs
+runtimeBootTag=v0.3.2-boot
+runtimeQemuTag=v0.3.2-qemu
 
 # A non-empty source tag promotes an already verified component without
 # recompiling it. Clear only the component that must be rebuilt for a release.
-runtimeRootfsSourceTag=v0.1.1-rootfs
-runtimeBootSourceTag=v0.1.0-boot
-runtimeQemuSourceTag=v0.1.0-qemu
+runtimeRootfsSourceTag=v0.3.1-bundle
+runtimeBootSourceTag=v0.3.1-bundle
+runtimeQemuSourceTag=v0.3.1-bundle

@@ -117,12 +117,13 @@ jobs:
           tar --zstd -cf "$archive" -C bundle nexus-qemu
           sha256sum "$archive" > "$archive.sha256"
 
-      - name: Publish QEMU release
+      - name: Publish internal QEMU component
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           archive="nexus-qemu-${GITHUB_REF_NAME}.tar.zst"
           gh release create "$GITHUB_REF_NAME" \
             "$archive" "$archive.sha256" \
+            --draft \
             --title "Nexus QEMU ${GITHUB_REF_NAME}" \
-            --notes "Android ARM64 QEMU, slirp, firmware/keymaps, and launcher component."
+            --notes "Internal component used to assemble ${GITHUB_REF_NAME%-qemu}-bundle."
