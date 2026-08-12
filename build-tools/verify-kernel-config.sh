@@ -14,8 +14,11 @@ require_builtin() {
 
 require_disabled() {
     option="$1"
-    if ! grep -q "^# CONFIG_${option} is not set$" "$config_file"; then
-        echo "FATAL: CONFIG_${option} is not disabled" >&2
+    # A dependency-pruned boolean may be omitted from .config completely.
+    # Both omission and the normal "is not set" form mean disabled; reject
+    # only values that actually compile or enable the feature.
+    if grep -Eq "^CONFIG_${option}=(y|m)$" "$config_file"; then
+        echo "FATAL: CONFIG_${option} is enabled" >&2
         grep "CONFIG_${option}" "$config_file" >&2 || true
         exit 1
     fi
