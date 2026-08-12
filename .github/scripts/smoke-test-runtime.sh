@@ -47,11 +47,11 @@ qemu-system-aarch64 \
     -append 'console=ttyAMA0 mitigations=off podroid.bandwidth=10' \
     -initrd "$initrd" \
     -drive "file=${persist},if=none,id=drive1,format=raw,cache=writeback" \
-    -device virtio-blk-pci,drive=drive1 \
+    -device virtio-blk-pci,drive=drive1,romfile= \
     -drive "file=${rootfs},if=none,id=drive2,format=raw,readonly=on" \
-    -device virtio-blk-pci,drive=drive2 \
+    -device virtio-blk-pci,drive=drive2,romfile= \
     -netdev user,id=net0,ipv6=off,hostfwd=tcp:127.0.0.1:19922-:22,hostfwd=tcp:127.0.0.1:14096-:4096 \
-    -device virtio-net-pci,netdev=net0 \
+    -device virtio-net-pci,netdev=net0,romfile= \
     -serial "file:${serial_log}" \
     -display none \
     -monitor none \
