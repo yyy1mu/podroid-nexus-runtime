@@ -3,7 +3,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 output_dir="${1:?output directory is required}"
-qemu_version="${PODROID_QEMU_VERSION:?PODROID_QEMU_VERSION is required}"
+qemu_version="${NEXUS_QEMU_VERSION:?NEXUS_QEMU_VERSION is required}"
 ndk_root="${ANDROID_NDK_ROOT:?ANDROID_NDK_ROOT is required}"
 work_dir="$(mktemp -d)"
 trap 'rm -rf "$work_dir"' EXIT
@@ -40,7 +40,7 @@ sed \
 download() {
     local url="$1"
     local destination="$2"
-    curl --fail --location --retry 3 --output "$destination" "$url"
+    curl --fail --location --retry 8 --retry-all-errors --retry-delay 5 --connect-timeout 30 --output "$destination" "$url"
 }
 
 cd "$source_dir"
@@ -121,7 +121,7 @@ meson setup pixman-0.44.2/_build pixman-0.44.2 \
     -Da64-neon=disabled
 ninja -C pixman-0.44.2/_build install
 
-download "https://download.savannah.gnu.org/releases/attr/attr-2.5.2.tar.gz" attr.tar.gz
+download "https://download-mirror.savannah.gnu.org/releases/attr/attr-2.5.2.tar.gz" attr.tar.gz
 tar -xf attr.tar.gz
 (
     cd attr-2.5.2
@@ -149,17 +149,6 @@ cat > "$prefix/include/ucontext.h" <<'EOF'
 #define swapcontext libucontext_swapcontext
 #endif
 EOF
-
-download \
-    "https://github.com/libusb/libusb/releases/download/v1.0.27/libusb-1.0.27.tar.bz2" \
-    libusb.tar.bz2
-tar -xf libusb.tar.bz2
-(
-    cd libusb-1.0.27
-    ./configure --host=aarch64-linux-android --prefix="$prefix" \
-        --enable-static --disable-shared --disable-udev CC="$cc"
-    make -j"$(nproc)" install
-)
 
 qemu_dir="qemu-${qemu_version}"
 download "https://download.qemu.org/${qemu_dir}.tar.xz" qemu.tar.xz
@@ -255,10 +244,6 @@ EOF
 sed -i "1i#include \"$work_dir/qemu_jmp.h\"" "$qemu_dir/util/coroutine-ucontext.c"
 sed -i 's/\bsigsetjmp(\([^,]*\), *0)/_qemu_setjmp(\1)/g' "$qemu_dir/util/coroutine-ucontext.c"
 sed -i 's/\bsiglongjmp(/_qemu_longjmp(/g' "$qemu_dir/util/coroutine-ucontext.c"
-sed -i 's@^    rc = libusb_init(&ctx);@#if defined(__ANDROID__)\n    libusb_set_option(NULL, LIBUSB_OPTION_NO_DEVICE_DISCOVERY); /* unprivileged Android: wrap passed fd only, skip enumeration */\n#endif\n    rc = libusb_init(\&ctx);@' \
-    "$qemu_dir/hw/usb/host-libusb.c"
-grep -q LIBUSB_OPTION_NO_DEVICE_DISCOVERY "$qemu_dir/hw/usb/host-libusb.c"
-
 (
     cd "$qemu_dir"
     ./configure \
@@ -268,7 +253,7 @@ grep -q LIBUSB_OPTION_NO_DEVICE_DISCOVERY "$qemu_dir/hw/usb/host-libusb.c"
         --extra-ldflags="-L$prefix/lib -Wl,-z,max-page-size=16384 $prefix/lib/libucontext.a $prefix/lib/libshm.a $prefix/lib/libqemujmp.a" \
         --prefix="$qemu_out" \
         --target-list=aarch64-softmmu \
-        --enable-tcg --enable-slirp --enable-virtfs --enable-libusb --enable-pie \
+        --enable-tcg --enable-slirp --enable-virtfs --disable-libusb --enable-pie \
         --disable-docs --disable-gtk --disable-sdl --disable-vnc \
         --disable-vhost-user --disable-plugins --with-coroutine=ucontext
     make -j"$(nproc)" install
@@ -276,14 +261,10 @@ grep -q LIBUSB_OPTION_NO_DEVICE_DISCOVERY "$qemu_dir/hw/usb/host-libusb.c"
 
 "$cc" --sysroot="$llvm/sysroot" -target aarch64-linux-android26 \
     -fPIE -pie -Wl,-z,max-page-size=16384 \
-    "$repo_root/podroid-bridge.c" -o "$qemu_out/libpodroid-bridge.so"
-"$cc" --sysroot="$llvm/sysroot" -target aarch64-linux-android26 \
-    -fPIE -pie -Wl,-z,max-page-size=16384 \
     "$repo_root/podroid-launcher.c" -o "$qemu_out/libpodroid-launcher.so"
 
 cp "$qemu_out/bin/qemu-system-aarch64" "$output_dir/libqemu-system-aarch64.so"
 cp "$qemu_out/lib/libslirp.so.0" "$output_dir/libslirp.so"
-cp "$qemu_out/libpodroid-bridge.so" "$output_dir/libpodroid-bridge.so"
 cp "$qemu_out/libpodroid-launcher.so" "$output_dir/libpodroid-launcher.so"
 cp "$qemu_out/share/qemu/efi-virtio.rom" "$output_dir/qemu/efi-virtio.rom"
 cp -a "$qemu_out/share/qemu/keymaps/." "$output_dir/qemu/keymaps/"
@@ -293,7 +274,17 @@ patchelf --replace-needed libslirp.so.0 libslirp.so "$output_dir/libqemu-system-
 for artifact in \
     libqemu-system-aarch64.so \
     libslirp.so \
-    libpodroid-bridge.so \
     libpodroid-launcher.so; do
     test -s "$output_dir/$artifact"
 done
+
+
+if strings "$output_dir/libqemu-system-aarch64.so" | grep -i libusb > "$work_dir/libusb-strings.txt"; then
+    echo "QEMU binary unexpectedly contains libusb support" >&2
+    exit 1
+fi
+if readelf -d "$output_dir/libqemu-system-aarch64.so" | grep -i 'NEEDED.*libusb' > "$work_dir/libusb-needed.txt"; then
+    echo "QEMU binary unexpectedly links libusb" >&2
+    exit 1
+fi
+test ! -e "$output_dir/libpodroid-bridge.so"

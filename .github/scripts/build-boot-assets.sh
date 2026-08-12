@@ -3,7 +3,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 output_dir="${1:?output directory is required}"
-kernel_version="${PODROID_KERNEL_VERSION:?PODROID_KERNEL_VERSION is required}"
+kernel_version="${NEXUS_KERNEL_VERSION:?NEXUS_KERNEL_VERSION is required}"
 work_dir="$(mktemp -d)"
 trap 'sudo rm -rf "$work_dir"' EXIT
 
@@ -43,10 +43,7 @@ initroot="$work_dir/initroot"
 alpine_prepare_apk "$work_dir/alpine-tools"
 alpine_extract_aarch64_root "$initroot"
 alpine_apk_add "$initroot" \
-    bash busybox busybox-extras ttyd podman \
-    netavark aardvark-dns fuse-overlayfs slirp4netns iptables ip6tables \
-    shadow-uidmap ca-certificates crun curl e2fsprogs util-linux openrc \
-    dropbear ncurses-terminfo-base musl-locales kmod fastfetch
+    busybox e2fsprogs util-linux kmod
 
 sudo install -m 0755 "$repo_root/init-podroid" "$initroot/init"
 sudo mkdir -p "$initroot/lib/modules"

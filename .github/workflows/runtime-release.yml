@@ -1,0 +1,246 @@
+name: Nexus runtime release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nexus-runtime-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ANDROID_NDK_VERSION: "27.2.12479018"
+
+jobs:
+  boot-assets:
+    name: Kernel and initramfs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Read pinned versions
+        id: versions
+        run: |
+          kernel="$(sed -n 's/^runtimeKernelVersion=//p' runtime.properties)"
+          test -n "$kernel"
+          echo "kernel=$kernel" >> "$GITHUB_OUTPUT"
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            bc binfmt-support binutils-aarch64-linux-gnu bison ca-certificates \
+            cpio curl flex gcc-aarch64-linux-gnu kmod libelf-dev libssl-dev \
+            make qemu-user-static xz-utils
+          sudo update-binfmts --enable qemu-aarch64
+
+      - name: Build kernel and initramfs
+        env:
+          NEXUS_KERNEL_VERSION: ${{ steps.versions.outputs.kernel }}
+        run: bash .github/scripts/build-boot-assets.sh ci-output/boot
+
+      - name: Verify artifacts
+        run: |
+          test -s ci-output/boot/vmlinuz-virt
+          test -s ci-output/boot/initrd.img
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: boot-assets
+          path: ci-output/boot/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  rootfs:
+    name: QEMU-only Alpine and OpenCode
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Read pinned versions
+        id: versions
+        run: |
+          system="$(sed -n 's/^runtimeSystemVersion=//p' runtime.properties)"
+          opencode="$(sed -n 's/^runtimeOpenCodeVersion=//p' runtime.properties)"
+          alpine="$(sed -n 's/^runtimeAlpineVersion=//p' runtime.properties)"
+          test -n "$system" && test -n "$opencode" && test -n "$alpine"
+          echo "system=$system" >> "$GITHUB_OUTPUT"
+          echo "opencode=$opencode" >> "$GITHUB_OUTPUT"
+          echo "alpine=$alpine" >> "$GITHUB_OUTPUT"
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            binfmt-support binutils-aarch64-linux-gnu ca-certificates curl \
+            gcc-aarch64-linux-gnu openssl qemu-user-static squashfs-tools
+          sudo update-binfmts --enable qemu-aarch64
+
+      - name: Build rootfs
+        env:
+          ALPINE_RELEASE: ${{ steps.versions.outputs.alpine }}
+          NEXUS_RUNTIME_SYSTEM_VERSION: ${{ steps.versions.outputs.system }}
+          NEXUS_OPENCODE_VERSION: ${{ steps.versions.outputs.opencode }}
+        run: bash .github/scripts/build-rootfs.sh ci-output/rootfs
+
+      - name: Verify rootfs and execute OpenCode
+        run: bash .github/scripts/verify-runtime-rootfs.sh ci-output/rootfs/alpine-rootfs.squashfs
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rootfs
+          path: ci-output/rootfs/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  qemu:
+    name: QEMU TCG without VNC or libusb
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Read pinned version
+        id: versions
+        run: |
+          qemu="$(sed -n 's/^runtimeQemuVersion=//p' runtime.properties)"
+          test -n "$qemu"
+          echo "qemu=$qemu" >> "$GITHUB_OUTPUT"
+
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: ndk;${{ env.ANDROID_NDK_VERSION }}
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            autoconf automake binutils bison bzip2 ca-certificates cmake curl \
+            flex gettext git libglib2.0-bin libglib2.0-dev libintl-perl \
+            libtool make ninja-build patchelf pkg-config python3-venv xz-utils
+          python3 -m venv "$RUNNER_TEMP/meson-venv"
+          "$RUNNER_TEMP/meson-venv/bin/pip" install meson
+
+      - name: Build QEMU and launcher
+        env:
+          NEXUS_QEMU_VERSION: ${{ steps.versions.outputs.qemu }}
+        run: |
+          export PATH="$RUNNER_TEMP/meson-venv/bin:$PATH"
+          export ANDROID_NDK_ROOT="$ANDROID_SDK_ROOT/ndk/${ANDROID_NDK_VERSION}"
+          bash .github/scripts/build-qemu.sh ci-output/qemu
+
+      - name: Verify native artifacts
+        run: |
+          for file in libqemu-system-aarch64.so libslirp.so libpodroid-launcher.so; do
+            test -s "ci-output/qemu/$file"
+          done
+          test ! -e ci-output/qemu/libpodroid-bridge.so
+          test -s ci-output/qemu/qemu/efi-virtio.rom
+          test -n "$(find ci-output/qemu/qemu/keymaps -type f -print -quit)"
+          if strings ci-output/qemu/libqemu-system-aarch64.so | grep -i libusb; then
+            echo "libusb content remains in QEMU" >&2
+            exit 1
+          fi
+
+      - name: Verify 16 KB ELF alignment
+        run: |
+          python3 - ci-output/qemu/libqemu-system-aarch64.so <<'PY'
+          import struct
+          import sys
+
+          path = sys.argv[1]
+          with open(path, "rb") as stream:
+              data = stream.read()
+          phoff = struct.unpack_from("<Q", data, 32)[0]
+          phentsize = struct.unpack_from("<H", data, 54)[0]
+          phnum = struct.unpack_from("<H", data, 56)[0]
+          aligns = [
+              struct.unpack_from("<Q", data, phoff + index * phentsize + 48)[0]
+              for index in range(phnum)
+              if struct.unpack_from("<I", data, phoff + index * phentsize)[0] == 1
+          ]
+          if not aligns or any(alignment < 16384 for alignment in aligns):
+              raise SystemExit(f"{path} is not 16 KB page aligned: {aligns}")
+          PY
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: qemu-assets
+          path: ci-output/qemu/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  release:
+    name: Publish versioned runtime bundle
+    needs: [boot-assets, rootfs, qemu]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: boot-assets
+          path: bundle/nexus-runtime/assets/vm
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: rootfs
+          path: bundle/nexus-runtime/assets/vm
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: qemu-assets
+          path: bundle/qemu
+
+      - name: Assemble runtime contract
+        run: |
+          mkdir -p \
+            bundle/nexus-runtime/assets/vm/qemu \
+            bundle/nexus-runtime/jniLibs/arm64-v8a
+          install -m 0755 bundle/qemu/libqemu-system-aarch64.so \
+            bundle/nexus-runtime/jniLibs/arm64-v8a/
+          install -m 0755 bundle/qemu/libslirp.so \
+            bundle/nexus-runtime/jniLibs/arm64-v8a/
+          install -m 0755 bundle/qemu/libpodroid-launcher.so \
+            bundle/nexus-runtime/jniLibs/arm64-v8a/
+          cp -R bundle/qemu/qemu/. bundle/nexus-runtime/assets/vm/qemu/
+          cp runtime.properties bundle/nexus-runtime/
+          printf '%s\n' \
+            "tag=${GITHUB_REF_NAME}" \
+            "commit=${GITHUB_SHA}" \
+            >> bundle/nexus-runtime/runtime.properties
+          (
+            cd bundle/nexus-runtime
+            find . -type f ! -name SHA256SUMS -print0 | sort -z | \
+              xargs -0 sha256sum > SHA256SUMS
+          )
+
+      - name: Pack and checksum
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends zstd
+          archive="nexus-runtime-${GITHUB_REF_NAME}.tar.zst"
+          tar --zstd -cf "$archive" -C bundle nexus-runtime
+          sha256sum "$archive" > "$archive.sha256"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          archive="nexus-runtime-${GITHUB_REF_NAME}.tar.zst"
+          gh release create "$GITHUB_REF_NAME" \
+            "$archive" "$archive.sha256" \
+            --title "Nexus Runtime ${GITHUB_REF_NAME}" \
+            --notes "QEMU-only Nexus runtime. Includes the kernel, initrd, Alpine/OpenCode rootfs, QEMU TCG, slirp, and Android launcher."

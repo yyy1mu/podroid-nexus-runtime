@@ -3,7 +3,8 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 output_dir="${1:?output directory is required}"
-system_version="${PODROID_SYSTEM_VERSION:?PODROID_SYSTEM_VERSION is required}"
+system_version="${NEXUS_RUNTIME_SYSTEM_VERSION:?NEXUS_RUNTIME_SYSTEM_VERSION is required}"
+opencode_version="${NEXUS_OPENCODE_VERSION:?NEXUS_OPENCODE_VERSION is required}"
 work_dir="$(mktemp -d)"
 trap 'sudo rm -rf "$work_dir"' EXIT
 
@@ -24,37 +25,23 @@ guest_cflags=(
 )
 aarch64-linux-gnu-gcc --sysroot="$build_sysroot" -B"$build_sysroot/usr/lib/" \
     "${guest_cflags[@]}" \
-    "$repo_root/build-rootfs/vsock-agent/podroid-vsock-agent.c" \
-    -o "$work_dir/podroid-vsock-agent"
-aarch64-linux-gnu-gcc --sysroot="$build_sysroot" -B"$build_sysroot/usr/lib/" \
-    "${guest_cflags[@]}" \
-    "$repo_root/build-rootfs/host-bridge/podroid-hostd.c" \
-    -o "$work_dir/podroid-hostd"
-aarch64-linux-gnu-gcc --sysroot="$build_sysroot" -B"$build_sysroot/usr/lib/" \
-    "${guest_cflags[@]}" \
     "$repo_root/build-rootfs/overlay-normalize/podroid-overlay-normalize.c" \
     -o "$work_dir/podroid-overlay-normalize"
-for guest_binary in \
-    "$work_dir/podroid-vsock-agent" \
-    "$work_dir/podroid-hostd" \
-    "$work_dir/podroid-overlay-normalize"; do
-    elf_header="$(aarch64-linux-gnu-readelf -h "$guest_binary")"
-    elf_program_headers="$(aarch64-linux-gnu-readelf -l "$guest_binary")"
-    grep -q 'Machine:.*AArch64' <<< "$elf_header"
-    if grep -q INTERP <<< "$elf_program_headers"; then
-        echo "Guest helper is not statically linked: $guest_binary" >&2
-        exit 1
-    fi
-done
+elf_header="$(aarch64-linux-gnu-readelf -h "$work_dir/podroid-overlay-normalize")"
+elf_program_headers="$(aarch64-linux-gnu-readelf -l "$work_dir/podroid-overlay-normalize")"
+grep -q 'Machine:.*AArch64' <<< "$elf_header"
+if grep -q INTERP <<< "$elf_program_headers"; then
+    echo "Guest helper is not statically linked" >&2
+    exit 1
+fi
 sudo install -m 0755 \
-    "$work_dir/podroid-vsock-agent" \
-    "$work_dir/podroid-hostd" \
     "$work_dir/podroid-overlay-normalize" \
     "$rootfs/usr/local/bin/"
 
 sudo env \
     ALPINE_VERSION="$ALPINE_RELEASE" \
     SYSTEM_VERSION="$system_version" \
+    OPENCODE_VERSION="$opencode_version" \
     ALPINE_MIRROR="$ALPINE_MIRROR" \
     ROOTFS="$rootfs" \
     WORK_DIR="$repo_root/build-rootfs" \

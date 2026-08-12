@@ -1,57 +1,30 @@
-# Build outputs
+# Native build outputs and intermediates
 /build/
-/app/build/
-/terminal-emulator/build/
-/terminal-view/build/
+/ci-output/
+/qemu-src/
+/qemu-build/
+/alpine-rootfs/
+/config-temp/
+config.log
+
+# Generated runtime artifacts
 *.apk
 *.aab
+*.img
+*.squashfs
+*.tar.gz
+*.tar.zst
+*.zst.sha256
 
-# Gradle
-.gradle/
-local.properties
-
-# IDE
+# Editors and local scratch files
 /.idea/
 *.iml
 .DS_Store
-
-# Kotlin
-.kotlin/
-
-# Native build
-.externalNativeBuild/
-.cxx/
-
-# QEMU build artifacts (built separately)
-/qemu-src/
-/qemu-build/
-
-# Docker/initramfs build intermediates
-/alpine-rootfs/
-/config-temp/
-*.tar.gz
-config.log
-
-# Generated assets (built by docker-build-initramfs.sh)
-app/src/main/assets/vmlinuz-virt
-app/src/main/assets/initrd.img
-app/src/main/assets/alpine-rootfs.squashfs
-app/src/main/jniLibs/arm64-v8a/libqemu-system-aarch64.so
-app/src/main/jniLibs/arm64-v8a/libslirp.so
-app/src/main/jniLibs/arm64-v8a/libpodroid-bridge.so
-
-# Local planning / scratch dirs
-docs/superpowers/
-
-# Claude Code sessions
-.claude/
-
-# Misc
 *.tmp
-/captures/
-app/src/main/jniLibs/
+/.claude/
+/.superpowers/
 
-# Alpine Linux rootfs directories (generated during Docker build)
+# Alpine rootfs directories when a script is run from the repository root
 /bin/
 /etc/
 /lib/
@@ -69,9 +42,3 @@ app/src/main/jniLibs/
 /srv/
 /sys/
 /tmp/
-
-# Release signing keystore — never commit
-/podroid-release.jks
-
-# Visual companion (brainstorming sessions)
-.superpowers/

@@ -9,11 +9,11 @@ assignees: ''
 ## Description
 A clear and concise description of what the bug is.
 
-## Steps to Reproduce
-Steps to reproduce the behavior:
-1. Go to '...'
-2. Tap '...'
-3. See error
+## Affected release
+Include the runtime tag and the Nexus app version.
+
+## Steps to reproduce
+Describe the VM start or OpenCode request that fails.
 
 ## Expected Behavior
 What you expected to happen.
@@ -21,16 +21,15 @@ What you expected to happen.
 ## Actual Behavior
 What actually happened instead.
 
-## Diagnostic Log
-**Required.** Attach the log export from `Settings → Diagnostics → Export Log`.
+## Diagnostic evidence
+Attach the failed GitHub Actions job log for build failures. For runtime
+failures, attach the Nexus virtual-machine log and `/var/log/opencode.log`.
 
-The export already includes: app version, device info (model / Android version), settings, and full logcat.
-
-## Reproduction Sample
-If this is about the VM, include terminal output from running:
+Also include:
 ```
 uname -a
 cat /etc/alpine-release
+/usr/local/bin/opencode --version
 ```
 
 ## Additional Context

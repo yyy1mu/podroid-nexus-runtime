@@ -13,6 +13,13 @@ depend() {
 
 start() {
     ebegin "Starting opencode server (0.0.0.0:4096)"
+    : > /var/log/opencode.log
+    if ! /usr/local/bin/opencode --version >> /var/log/opencode.log 2>&1; then
+        echo "OpenCode runtime validation failed" > /dev/console
+        ewarn "opencode runtime validation failed (see /var/log/opencode.log)"
+        eend 1
+        return 1
+    fi
     rm -f /run/podroid-opencode.pid
     start-stop-daemon --start --background \
         --pidfile /run/podroid-opencode.pid --make-pidfile \
@@ -21,19 +28,31 @@ start() {
         --exec /usr/local/bin/opencode -- \
         serve --hostname 0.0.0.0 --port 4096
     _rc=$?
-    # --background returns 0 as soon as the child forks; poll the pidfile so a
-    # crash-on-launch (bad arg, port bound) still flips the rc.
+    # --background returns before the Bun-based server has loaded. Wait until
+    # the guest port is listening so podroid-ready never advertises a dead or
+    # still-starting OpenCode service to the Android client.
     if [ "$_rc" -eq 0 ]; then
         _pid=$(cat /run/podroid-opencode.pid 2>/dev/null)
         _i=0
-        while [ "$_i" -lt 10 ]; do
-            sleep 0.1
-            kill -0 "$_pid" 2>/dev/null && break
+        while [ "$_i" -lt 180 ]; do
+            if ! kill -0 "$_pid" 2>/dev/null; then
+                _rc=1
+                break
+            fi
+            if ss -ltn 2>/dev/null | grep -qE '(^|:)4096[[:space:]]'; then
+                break
+            fi
+            sleep 1
             _i=$((_i + 1))
         done
-        kill -0 "$_pid" 2>/dev/null || _rc=1
+        if ! ss -ltn 2>/dev/null | grep -qE '(^|:)4096[[:space:]]'; then
+            _rc=1
+        fi
     fi
-    [ "$_rc" -eq 0 ] || ewarn "opencode failed to start (see /var/log/opencode.log)"
+    if [ "$_rc" -ne 0 ]; then
+        echo "OpenCode failed to become ready" > /dev/console
+        ewarn "opencode failed to start (see /var/log/opencode.log)"
+    fi
     eend $_rc
 }
 

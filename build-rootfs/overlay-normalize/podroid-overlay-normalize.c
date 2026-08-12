@@ -1,5 +1,5 @@
 /*
- * Podroid - Rootless Podman for Android
+ * Nexus Runtime - persistent overlay compatibility helper
  * Copyright (C) 2024-2026 Podroid contributors
  *
  * podroid-overlay-normalize <upper_dir> <work_dir>

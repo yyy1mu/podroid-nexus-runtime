@@ -35,7 +35,7 @@ echo "Mounting storage..." > /dev/console
 # virtio_blk is built-in; modprobe is a no-op safety net
 [ -d "/lib/modules/$(uname -r)" ] && { depmod -a 2>/dev/null; modprobe virtio_blk 2>/dev/null; }
 
-# /dev/vda = persistent ext4 (user data, container storage)
+# /dev/vda = persistent ext4 user data
 # /dev/vdb = read-only Alpine squashfs (system files)
 mkdir -p /mnt/persist /mnt/lower /mnt/overlay
 
@@ -51,9 +51,8 @@ done
 # Persistent: format on first boot if needed.
 # noatime: stop atime writes on every read.
 # commit=1: journal commits every 1s (vs ext4's 5s default) so an abrupt
-#   VM kill (Stop/Restart) loses at most ~1s of writes. QEMU has no per-stop
-#   guest-sync channel, so this commit window is what bounds its data loss;
-#   the AVF backend additionally issues an explicit sync before stopping.
+#   VM kill (Stop/Restart) loses at most ~1s of writes. This commit window is
+#   what bounds data loss when the Android process is stopped abruptly.
 # barrier=1: write barriers ON so ext4's journal ordering is durable. The
 #   guest's flushes reach storage.img through QEMU's writeback cache, which
 #   honors flushes, keeping the on-disk journal consistent for recovery.

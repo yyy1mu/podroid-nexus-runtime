@@ -1,5 +1,5 @@
 # build-rootfs/overlay-normalize/Makefile
-# musl-static aarch64 build. Invoked from Dockerfile.rootfs's vsock-builder stage.
+# musl-static aarch64 build used by the rootfs release job.
 CC      ?= gcc
 CFLAGS  ?= -O2 -Wall -Wextra -Wno-unused-parameter -static -D_GNU_SOURCE \
            -fstack-protector-strong -D_FORTIFY_SOURCE=2
