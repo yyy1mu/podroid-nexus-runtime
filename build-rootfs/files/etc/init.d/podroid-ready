@@ -7,8 +7,24 @@ depend() {
 }
 
 start() {
+    ebegin "Waiting for OpenCode on port 4096"
+    _pid=$(cat /run/podroid-opencode.pid 2>/dev/null)
+    _i=0
+    while [ "$_i" -lt 240 ]; do
+        if [ -z "$_pid" ] || ! kill -0 "$_pid" 2>/dev/null; then
+            echo "OpenCode exited before becoming ready" > /dev/console
+            eend 1
+            return 1
+        fi
+        if ss -ltn 2>/dev/null | grep -qE '(^|:)4096[[:space:]]'; then
+            break
+        fi
+        sleep 1
+        _i=$((_i + 1))
+    done
     if ! ss -ltn 2>/dev/null | grep -qE '(^|:)4096[[:space:]]'; then
         echo "OpenCode failed to become ready" > /dev/console
+        eend 1
         return 1
     fi
 
@@ -24,6 +40,7 @@ start() {
     echo "Starting SSH..." > /dev/console
     echo "Almost ready..." > /dev/console
     echo "Ready!" > /dev/console
+    eend 0
     return 0
 }
 

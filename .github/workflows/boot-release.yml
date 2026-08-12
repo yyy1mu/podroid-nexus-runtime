@@ -1,0 +1,79 @@
+name: Nexus boot assets release
+
+on:
+  push:
+    tags:
+      - "v*-boot"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nexus-boot-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  boot:
+    name: Build kernel and initramfs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Read pinned kernel version
+        id: versions
+        run: |
+          kernel="$(sed -n 's/^runtimeKernelVersion=//p' runtime.properties)"
+          test -n "$kernel"
+          echo "kernel=$kernel" >> "$GITHUB_OUTPUT"
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            bc binfmt-support binutils-aarch64-linux-gnu bison ca-certificates \
+            cpio curl flex gcc-aarch64-linux-gnu kmod libelf-dev libssl-dev \
+            make qemu-user-static xz-utils zstd
+          sudo update-binfmts --enable qemu-aarch64
+
+      - name: Build kernel and initramfs
+        env:
+          NEXUS_KERNEL_VERSION: ${{ steps.versions.outputs.kernel }}
+        run: bash .github/scripts/build-boot-assets.sh ci-output/boot
+
+      - name: Verify boot assets
+        run: |
+          test -s ci-output/boot/vmlinuz-virt
+          test -s ci-output/boot/initrd.img
+
+      - name: Pack immutable boot component
+        env:
+          KERNEL_VERSION: ${{ steps.versions.outputs.kernel }}
+        run: |
+          component=bundle/nexus-boot
+          mkdir -p "$component"
+          install -m 0644 ci-output/boot/vmlinuz-virt ci-output/boot/initrd.img "$component/"
+          printf '%s\n' \
+            'component=boot' \
+            "tag=${GITHUB_REF_NAME}" \
+            "commit=${GITHUB_SHA}" \
+            "runtimeKernelVersion=${KERNEL_VERSION}" \
+            > "$component/component.properties"
+          (
+            cd "$component"
+            find . -type f ! -name SHA256SUMS -print0 | sort -z | \
+              xargs -0 sha256sum > SHA256SUMS
+          )
+          archive="nexus-boot-${GITHUB_REF_NAME}.tar.zst"
+          tar --zstd -cf "$archive" -C bundle nexus-boot
+          sha256sum "$archive" > "$archive.sha256"
+
+      - name: Publish boot release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          archive="nexus-boot-${GITHUB_REF_NAME}.tar.zst"
+          gh release create "$GITHUB_REF_NAME" \
+            "$archive" "$archive.sha256" \
+            --title "Nexus Boot ${GITHUB_REF_NAME}" \
+            --notes "Kernel and matching initramfs component."

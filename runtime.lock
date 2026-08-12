@@ -1,0 +1,4 @@
+# Immutable component releases assembled by the v*-bundle workflow.
+runtimeRootfsTag=v0.1.1-rootfs
+runtimeBootTag=v0.1.0-boot
+runtimeQemuTag=v0.1.0-qemu

@@ -31,12 +31,23 @@ version="$(timeout 180 qemu-aarch64-static -L "$rootfs" "$opencode" --version)"
 test -n "$version"
 echo "Verified OpenCode $version"
 
-grep -Fq 'need podroid-network podroid-opencode' \
-    "$rootfs/etc/init.d/podroid-ready"
-grep -Fq '/usr/local/bin/opencode --version' \
-    "$rootfs/etc/init.d/podroid-opencode"
-grep -Fq 'while [ "$_i" -lt 180 ]' \
-    "$rootfs/etc/init.d/podroid-opencode"
+opencode_service="$rootfs/etc/init.d/podroid-opencode"
+ready_service="$rootfs/etc/init.d/podroid-ready"
+grep -Fq 'need podroid-network podroid-opencode' "$ready_service"
+grep -Fq 'while [ "$_i" -lt 240 ]' "$ready_service"
+grep -Fq 'ss -ltn' "$ready_service"
+grep -Fq 'start-stop-daemon --start --background' "$opencode_service"
+if grep -Fq '/usr/local/bin/opencode --version' "$opencode_service"; then
+    echo "OpenCode boot service still performs the expensive version preflight" >&2
+    exit 1
+fi
+if grep -Fq 'while [ "$_i"' "$opencode_service"; then
+    echo "OpenCode boot service must not block OpenRC dependency startup" >&2
+    exit 1
+fi
+
+sh -n "$opencode_service"
+sh -n "$ready_service"
 
 if find "$rootfs" \( -type f -o -type l \) | \
     grep -Eqi 'tigervnc|Xvnc|pulseaudio|podroid-vsock|podroid-hostd|libusb'; then

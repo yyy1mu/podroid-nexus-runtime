@@ -1,0 +1,103 @@
+name: Nexus runtime bundle release
+
+on:
+  push:
+    tags:
+      - "v*-bundle"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nexus-runtime-bundle-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bundle:
+    name: Assemble pinned runtime components
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Read component lock
+        id: components
+        run: |
+          rootfs="$(sed -n 's/^runtimeRootfsTag=//p' runtime.lock)"
+          boot="$(sed -n 's/^runtimeBootTag=//p' runtime.lock)"
+          qemu="$(sed -n 's/^runtimeQemuTag=//p' runtime.lock)"
+          test -n "$rootfs" && test -n "$boot" && test -n "$qemu"
+          echo "rootfs=$rootfs" >> "$GITHUB_OUTPUT"
+          echo "boot=$boot" >> "$GITHUB_OUTPUT"
+          echo "qemu=$qemu" >> "$GITHUB_OUTPUT"
+
+      - name: Install packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends zstd
+
+      - name: Download and verify immutable components
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ROOTFS_TAG: ${{ steps.components.outputs.rootfs }}
+          BOOT_TAG: ${{ steps.components.outputs.boot }}
+          QEMU_TAG: ${{ steps.components.outputs.qemu }}
+        run: |
+          bash .github/scripts/download-runtime-component.sh rootfs "$ROOTFS_TAG" components
+          bash .github/scripts/download-runtime-component.sh boot "$BOOT_TAG" components
+          bash .github/scripts/download-runtime-component.sh qemu "$QEMU_TAG" components
+
+      - name: Assemble runtime contract
+        env:
+          ROOTFS_TAG: ${{ steps.components.outputs.rootfs }}
+          BOOT_TAG: ${{ steps.components.outputs.boot }}
+          QEMU_TAG: ${{ steps.components.outputs.qemu }}
+        run: |
+          runtime=bundle/nexus-runtime
+          mkdir -p "$runtime/assets/vm/qemu" "$runtime/jniLibs/arm64-v8a"
+          install -m 0644 components/nexus-rootfs/alpine-rootfs.squashfs "$runtime/assets/vm/"
+          install -m 0644 \
+            components/nexus-boot/vmlinuz-virt \
+            components/nexus-boot/initrd.img \
+            "$runtime/assets/vm/"
+          install -m 0755 \
+            components/nexus-qemu/libqemu-system-aarch64.so \
+            components/nexus-qemu/libslirp.so \
+            components/nexus-qemu/libpodroid-launcher.so \
+            "$runtime/jniLibs/arm64-v8a/"
+          cp -R components/nexus-qemu/qemu/. "$runtime/assets/vm/qemu/"
+          cp runtime.properties "$runtime/runtime.properties"
+          printf '%s\n' \
+            "tag=${GITHUB_REF_NAME}" \
+            "commit=${GITHUB_SHA}" \
+            "runtimeRootfsTag=${ROOTFS_TAG}" \
+            "runtimeBootTag=${BOOT_TAG}" \
+            "runtimeQemuTag=${QEMU_TAG}" \
+            >> "$runtime/runtime.properties"
+          (
+            cd "$runtime"
+            find . -type f ! -name SHA256SUMS -print0 | sort -z | \
+              xargs -0 sha256sum > SHA256SUMS
+          )
+
+      - name: Verify assembled runtime
+        run: bash .github/scripts/verify-runtime-bundle.sh bundle/nexus-runtime
+
+      - name: Pack runtime bundle
+        run: |
+          archive="nexus-runtime-${GITHUB_REF_NAME}.tar.zst"
+          tar --zstd -cf "$archive" -C bundle nexus-runtime
+          sha256sum "$archive" > "$archive.sha256"
+
+      - name: Publish runtime bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ROOTFS_TAG: ${{ steps.components.outputs.rootfs }}
+          BOOT_TAG: ${{ steps.components.outputs.boot }}
+          QEMU_TAG: ${{ steps.components.outputs.qemu }}
+        run: |
+          archive="nexus-runtime-${GITHUB_REF_NAME}.tar.zst"
+          gh release create "$GITHUB_REF_NAME" \
+            "$archive" "$archive.sha256" \
+            --title "Nexus Runtime ${GITHUB_REF_NAME}" \
+            --notes "Assembled without native compilation from rootfs ${ROOTFS_TAG}, boot ${BOOT_TAG}, and QEMU ${QEMU_TAG}."

@@ -1,0 +1,86 @@
+name: Nexus rootfs release
+
+on:
+  push:
+    tags:
+      - "v*-rootfs"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nexus-rootfs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rootfs:
+    name: Build Alpine and OpenCode rootfs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Read pinned versions
+        id: versions
+        run: |
+          system="$(sed -n 's/^runtimeSystemVersion=//p' runtime.properties)"
+          opencode="$(sed -n 's/^runtimeOpenCodeVersion=//p' runtime.properties)"
+          alpine="$(sed -n 's/^runtimeAlpineVersion=//p' runtime.properties)"
+          test -n "$system" && test -n "$opencode" && test -n "$alpine"
+          echo "system=$system" >> "$GITHUB_OUTPUT"
+          echo "opencode=$opencode" >> "$GITHUB_OUTPUT"
+          echo "alpine=$alpine" >> "$GITHUB_OUTPUT"
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            binfmt-support binutils-aarch64-linux-gnu ca-certificates curl \
+            gcc-aarch64-linux-gnu openssl qemu-user-static squashfs-tools zstd
+          sudo update-binfmts --enable qemu-aarch64
+
+      - name: Build rootfs
+        env:
+          ALPINE_RELEASE: ${{ steps.versions.outputs.alpine }}
+          NEXUS_RUNTIME_SYSTEM_VERSION: ${{ steps.versions.outputs.system }}
+          NEXUS_OPENCODE_VERSION: ${{ steps.versions.outputs.opencode }}
+        run: bash .github/scripts/build-rootfs.sh ci-output/rootfs
+
+      - name: Verify rootfs and execute OpenCode
+        run: bash .github/scripts/verify-runtime-rootfs.sh ci-output/rootfs/alpine-rootfs.squashfs
+
+      - name: Pack immutable rootfs component
+        env:
+          SYSTEM_VERSION: ${{ steps.versions.outputs.system }}
+          OPENCODE_VERSION: ${{ steps.versions.outputs.opencode }}
+          ALPINE_VERSION: ${{ steps.versions.outputs.alpine }}
+        run: |
+          component=bundle/nexus-rootfs
+          mkdir -p "$component"
+          install -m 0644 ci-output/rootfs/alpine-rootfs.squashfs "$component/"
+          printf '%s\n' \
+            'component=rootfs' \
+            "tag=${GITHUB_REF_NAME}" \
+            "commit=${GITHUB_SHA}" \
+            "runtimeSystemVersion=${SYSTEM_VERSION}" \
+            "runtimeOpenCodeVersion=${OPENCODE_VERSION}" \
+            "runtimeAlpineVersion=${ALPINE_VERSION}" \
+            > "$component/component.properties"
+          (
+            cd "$component"
+            find . -type f ! -name SHA256SUMS -print0 | sort -z | \
+              xargs -0 sha256sum > SHA256SUMS
+          )
+          archive="nexus-rootfs-${GITHUB_REF_NAME}.tar.zst"
+          tar --zstd -cf "$archive" -C bundle nexus-rootfs
+          sha256sum "$archive" > "$archive.sha256"
+
+      - name: Publish rootfs release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          archive="nexus-rootfs-${GITHUB_REF_NAME}.tar.zst"
+          gh release create "$GITHUB_REF_NAME" \
+            "$archive" "$archive.sha256" \
+            --title "Nexus Rootfs ${GITHUB_REF_NAME}" \
+            --notes "Alpine/OpenCode rootfs component. Built independently from the kernel and QEMU."

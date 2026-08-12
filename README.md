@@ -31,17 +31,29 @@ nexus-runtime/
 
 ## Releases
 
-Only tags matching `v*` start a build. GitHub Actions builds and validates all
-native components, then publishes `nexus-runtime-<tag>.tar.zst` and its SHA-256
-checksum. Heavy native builds are never required by the Nexus app repository.
+Only tags matching `v*` start a build. Components are independently versioned:
+
+- `v*-rootfs` publishes Alpine and OpenCode;
+- `v*-boot` publishes the matching kernel and initramfs;
+- `v*-qemu` publishes Android QEMU, slirp, firmware, and the launcher;
+- `v*-bundle` reads `runtime.lock` and assembles those immutable releases
+  without compiling native code again.
+
+Every component archive has both an archive checksum and an internal manifest.
+The assembled runtime records all three component tags in `runtime.properties`,
+so an APK is reproducible without relying on short-lived Actions caches. Heavy
+native builds are never required by the Nexus app repository.
 
 ## Rootfs readiness contract
 
 The guest is not marked ready until:
 
-1. the musl OpenCode binary passes `opencode --version`;
+1. CI has executed and validated the musl OpenCode binary;
 2. `libstdc++.so.6`, `libgcc_s.so.1`, and every ELF dependency are present;
-3. OpenCode remains alive and listens on guest TCP port 4096.
+3. the boot service starts OpenCode without blocking OpenRC's dependency
+   timeout;
+4. the ready service confirms that OpenCode remains alive and listens on guest
+   TCP port 4096.
 
 The Android host maps guest port 4096 to loopback port 14096.
 
