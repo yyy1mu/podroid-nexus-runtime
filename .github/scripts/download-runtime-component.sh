@@ -13,15 +13,66 @@ command -v gh >/dev/null
 command -v zstd >/dev/null
 command -v jq >/dev/null
 
+gh_retry() {
+    local attempt=1
+    local delay_seconds=2
+    while ! gh "$@"; do
+        if [ "$attempt" -ge 5 ]; then
+            return 1
+        fi
+        echo "GitHub request failed; retrying in ${delay_seconds}s (${attempt}/5)" >&2
+        sleep "$delay_seconds"
+        attempt=$((attempt + 1))
+        delay_seconds=$((delay_seconds * 2))
+    done
+}
+
+gh_api_retry() {
+    local response_file
+    local attempt=1
+    local delay_seconds=2
+    response_file="$(mktemp "$work_dir/gh-api.XXXXXX")"
+    while ! gh api "$@" > "$response_file"; do
+        if [ "$attempt" -ge 5 ]; then
+            return 1
+        fi
+        echo "GitHub API request failed; retrying in ${delay_seconds}s (${attempt}/5)" >&2
+        sleep "$delay_seconds"
+        attempt=$((attempt + 1))
+        delay_seconds=$((delay_seconds * 2))
+    done
+    command cat "$response_file"
+}
+
+gh_asset_retry() {
+    local asset_id="$1"
+    local destination_file="$2"
+    local attempt=1
+    local delay_seconds=2
+    while ! gh api \
+        -H 'Accept: application/octet-stream' \
+        "repos/$repository/releases/assets/$asset_id" \
+        > "$destination_file"; do
+        if [ "$attempt" -ge 5 ]; then
+            return 1
+        fi
+        echo "GitHub asset download failed; retrying in ${delay_seconds}s (${attempt}/5)" >&2
+        sleep "$delay_seconds"
+        attempt=$((attempt + 1))
+        delay_seconds=$((delay_seconds * 2))
+    done
+}
+
 if [ -z "$repository" ]; then
-    repository="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
+    repository="$(gh_retry repo view --json nameWithOwner --jq .nameWithOwner)"
 fi
 
 if [[ "$tag" == *-bundle ]]; then
     bundle_archive="nexus-runtime-${tag}.tar.zst"
-    gh release download "$tag" \
+    gh_retry release download "$tag" \
         --repo "$repository" \
         --pattern "${bundle_archive}*" \
+        --clobber \
         --dir "$work_dir"
     (
         cd "$work_dir"
@@ -91,7 +142,7 @@ fi
 # complete runtime bundle. Resolve the authenticated release and assets via
 # the API because the tag endpoint intentionally hides draft releases.
 release_id="$(
-    gh api --paginate "repos/$repository/releases?per_page=100" \
+    gh_api_retry --paginate "repos/$repository/releases?per_page=100" \
         | jq -r --arg tag "$tag" '.[] | select(.tag_name == $tag) | .id' \
         | head -n 1
 )"
@@ -99,16 +150,13 @@ test -n "$release_id"
 
 for asset_name in "$archive" "$archive.sha256"; do
     asset_id="$(
-        gh api "repos/$repository/releases/$release_id" \
+        gh_api_retry "repos/$repository/releases/$release_id" \
             | jq -r --arg name "$asset_name" \
                 '.assets[] | select(.name == $name) | .id' \
             | head -n 1
     )"
     test -n "$asset_id"
-    gh api \
-        -H 'Accept: application/octet-stream' \
-        "repos/$repository/releases/assets/$asset_id" \
-        > "$work_dir/$asset_name"
+    gh_asset_retry "$asset_id" "$work_dir/$asset_name"
 done
 
 (
