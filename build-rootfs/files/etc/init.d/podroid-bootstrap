@@ -1,5 +1,5 @@
 #!/sbin/openrc-run
-description="Podroid VM system bootstrap (cgroups, modules, devpts, sysctl)"
+description="Nexus VM system bootstrap (devpts, zram, sysctl)"
 
 depend() {
     need localmount
@@ -7,8 +7,8 @@ depend() {
 }
 
 start() {
-    ebegin "Loading kernel modules..."
-    echo "Loading kernel modules..." > /dev/console
+    ebegin "Preparing virtual machine..."
+    echo "Preparing virtual machine..." > /dev/console
 
     # /dev sub-mounts (we replaced devfs OpenRC service with the initramfs's
     # devtmpfs + these explicit mounts — keeps the boot path tight)
@@ -25,38 +25,16 @@ start() {
     # Hostname (Alpine's hostname service is disabled in our runlevel)
     [ -r /etc/hostname ] && hostname -F /etc/hostname 2>/dev/null
 
-    depmod -a 2>/dev/null
-    for m in 9p 9pnet 9pnet_virtio; do modprobe "$m" 2>/dev/null; done
-
     # I/O scheduler — kernel cmdline `elevator=` was deprecated in Linux 5.0,
     # so set it per device via sysfs.
     for q in /sys/block/vda/queue/scheduler /sys/block/vdb/queue/scheduler; do
         [ -w "$q" ] && echo mq-deadline > "$q" 2>/dev/null
     done
 
-    # Optional QEMU virtio-9p share. It is self-gating: the host only adds the
-    # user enables the toggle, so this returns ENODEV and exits silently when
-    # off. Foreground so a missing /dev/fuse or kernel feature surfaces in the
-    # boot log instead of being swallowed.
-    # msize=262144 (256 KB) — well under QEMU's virtio-9p 512 KB ceiling and
-    # large enough to amortize round-trips for big reads. cache=mmap is the
-    # next-best after cache=fscache (which requires CONFIG_9P_FSCACHE=y, not
-    # in this kernel build); mmap still page-caches mapped regions and is
-    # noticeably better than cache=loose for re-reads.
-    mkdir -p /mnt/downloads 2>/dev/null
-    mount -t 9p -o trans=virtio,version=9p2000.L,rw,msize=262144,cache=mmap,noatime \
-        downloads /mnt/downloads 2>/dev/null
-
-    # cgroup v2 subtree controllers
-    mkdir -p /sys/fs/cgroup 2>/dev/null
-    mountpoint -q /sys/fs/cgroup || mount -t cgroup2 cgroup2 /sys/fs/cgroup
-    printf '+cpuset +cpu +io +memory +hugetlb +pids +rdma\n' \
-        > /sys/fs/cgroup/cgroup.subtree_control 2>/dev/null
-
     # ZRAM swap (1.5x RAM, lz4). Was half-RAM; with lz4 averaging ~3x
     # compression on text/heap pages, 1.5x RAM disksize gives ~4.5x effective
-    # memory under pressure — enough headroom for Firefox + XFCE in a 2 GB VM
-    # without thrashing into OOM.
+    # memory under pressure — enough headroom for OpenCode Agent workloads in
+    # a 2 GB VM without thrashing into OOM.
     if [ -b /dev/zram0 ]; then
         _mem_kb=$(awk '/^MemTotal:/{print $2}' /proc/meminfo)
         echo lz4 > /sys/block/zram0/comp_algorithm 2>/dev/null
@@ -71,9 +49,9 @@ start() {
     # in podroid-ready once those services exist.
     [ -w /proc/sys/vm/oom_kill_allocating_task ] && \
         echo 0 > /proc/sys/vm/oom_kill_allocating_task
-    # overcommit_memory=1 (always overcommit) lets us actually hand out
-    # the address space Firefox wants without ENOMEM at mmap time —
-    # without this, browsers can crash with malloc failures long before
+    # overcommit_memory=1 (always overcommit) lets us hand out large virtual
+    # address spaces without ENOMEM at mmap time — otherwise workloads can
+    # fail allocations long before
     # the kernel's OOM killer ever fires.
     [ -w /proc/sys/vm/overcommit_memory ] && \
         echo 1 > /proc/sys/vm/overcommit_memory

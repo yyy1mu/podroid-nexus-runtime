@@ -33,6 +33,8 @@ echo "Verified OpenCode $version"
 
 opencode_service="$rootfs/etc/init.d/podroid-opencode"
 ready_service="$rootfs/etc/init.d/podroid-ready"
+bootstrap_service="$rootfs/etc/init.d/podroid-bootstrap"
+network_service="$rootfs/etc/init.d/podroid-network"
 grep -Fq 'need podroid-network podroid-opencode' "$ready_service"
 grep -Fq 'while [ "$_i" -lt 240 ]' "$ready_service"
 grep -Fq 'ss -ltn' "$ready_service"
@@ -48,6 +50,29 @@ fi
 
 sh -n "$opencode_service"
 sh -n "$ready_service"
+sh -n "$bootstrap_service"
+sh -n "$network_service"
+
+for package in iptables ip6tables nftables bridge-utils kmod; do
+    if grep -Eq "^${package}([=<>~]|$)" "$rootfs/etc/apk/world"; then
+        echo "Unused package remains in rootfs: $package" >&2
+        exit 1
+    fi
+done
+if grep -Eq '(^|[[:space:]])(depmod|modprobe)([[:space:]]|$)|mount -t 9p|mount -t cgroup2' \
+    "$bootstrap_service"; then
+    echo "Legacy module, 9P, or cgroup bootstrap logic remains" >&2
+    exit 1
+fi
+grep -Fq 'tc qdisc replace' "$network_service"
+if grep -F 'tc qdisc replace' "$network_service" | grep -Fq '|| true'; then
+    echo "TBF setup still hides kernel/configuration failures" >&2
+    exit 1
+fi
+if find "$rootfs/lib/modules" -name '*.ko' -print -quit 2>/dev/null | grep -q .; then
+    echo "Rootfs unexpectedly contains loadable kernel modules" >&2
+    exit 1
+fi
 
 if find "$rootfs" \( -type f -o -type l \) | \
     grep -Eqi 'tigervnc|Xvnc|pulseaudio|podroid-vsock|podroid-hostd|libusb'; then

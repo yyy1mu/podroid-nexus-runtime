@@ -103,6 +103,11 @@ if [[ "$tag" == *-bundle ]]; then
                 "$runtime/assets/vm/vmlinuz-virt" \
                 "$runtime/assets/vm/initrd.img" \
                 "$component_dir/"
+            if [ -s "$runtime/assets/vm/kernel-metrics.properties" ]; then
+                install -m 0644 \
+                    "$runtime/assets/vm/kernel-metrics.properties" \
+                    "$component_dir/"
+            fi
             version_key=runtimeKernelVersion
             extra_properties=""
             ;;

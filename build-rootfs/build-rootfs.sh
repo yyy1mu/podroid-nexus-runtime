@@ -23,10 +23,6 @@ EOF
     openrc \
     busybox-openrc \
     bash \
-    iptables \
-    ip6tables \
-    nftables \
-    bridge-utils \
     iproute2 \
     dropbear dropbear-openrc \
     openssh-sftp-server \
@@ -137,6 +133,6 @@ for svc in podroid-migrate podroid-bootstrap podroid-network dropbear podroid-op
 done
 
 # Disable services we don't need (initramfs already handles them, or they're noise in the VM)
-for svc in hwclock swclock urandom networking sysctl bootmisc syslog; do
-    rm -f "$ROOTFS/etc/runlevels/boot/$svc" "$ROOTFS/etc/runlevels/default/$svc"
+for svc in cgroups modules hwclock swclock urandom networking sysctl bootmisc syslog; do
+    rm -f "$ROOTFS/etc/runlevels"/*/"$svc"
 done

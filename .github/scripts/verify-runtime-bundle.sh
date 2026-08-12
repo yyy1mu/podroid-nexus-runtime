@@ -11,6 +11,9 @@ for file in libqemu-system-aarch64.so libslirp.so libpodroid-launcher.so; do
 done
 test ! -e "$runtime/jniLibs/arm64-v8a/libpodroid-bridge.so"
 test -s "$runtime/assets/vm/qemu/efi-virtio.rom"
+if [ -e "$runtime/assets/vm/kernel-metrics.properties" ]; then
+    grep -Fxq 'kernelModules=0' "$runtime/assets/vm/kernel-metrics.properties"
+fi
 release="$(sed -n 's/^nexusReleaseVersion=//p' "$runtime/runtime.properties")"
 test -n "$release"
 grep -Fxq "tag=v${release}-bundle" "$runtime/runtime.properties"

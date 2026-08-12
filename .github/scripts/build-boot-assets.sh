@@ -17,37 +17,34 @@ tar -xf "$work_dir/linux.tar.xz" -C "$work_dir"
 kernel_dir="$work_dir/linux-${kernel_version}"
 
 make -C "$kernel_dir" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- defconfig
+make -C "$kernel_dir" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- virt.config
+
+# The upstream defconfig intentionally offers broad hardware coverage through
+# modules. Nexus is a fixed QEMU virt appliance: turn every inherited module
+# off before CONFIG_MODULES=n is merged. Otherwise Kconfig promotes many of
+# those '=m' entries to built-ins and wastes both build time and kernel space.
+sed -E 's/^(CONFIG_[A-Z0-9_]+)=m$/# \1 is not set/' \
+    "$kernel_dir/.config" > "$kernel_dir/.config.nexus"
+mv "$kernel_dir/.config.nexus" "$kernel_dir/.config"
 (
     cd "$kernel_dir"
     ./scripts/kconfig/merge_config.sh -m .config "$repo_root/podroid_kernel.config"
-    ./scripts/kconfig/merge_config.sh -m .config "$repo_root/build-tools/forced_builtin.config"
 )
 make -C "$kernel_dir" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
 sh "$repo_root/build-tools/verify-kernel-config.sh" "$kernel_dir/.config"
-make -C "$kernel_dir" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
-    -j"$(nproc)" Image.gz modules
 
-modules_dir="$work_dir/modules"
+kernel_build_started="$SECONDS"
 make -C "$kernel_dir" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
-    INSTALL_MOD_PATH="$modules_dir" INSTALL_MOD_STRIP=1 modules_install
-rm -f "$modules_dir"/lib/modules/*/build "$modules_dir"/lib/modules/*/source
-
-modules_kernel_dir="$(find "$modules_dir/lib/modules" -mindepth 2 -maxdepth 2 -type d -name kernel -print -quit)"
-test -n "$modules_kernel_dir"
-find "$modules_kernel_dir" -name '*.ko' | \
-    grep -vE '(/net/(bridge|netfilter|9p|ipv4/netfilter|ipv6/netfilter)/|/fs/(9p|fuse|overlayfs)/|/drivers/net/(tun|veth|virtio_net)\.ko$|/drivers/block/virtio_blk\.ko$|/drivers/char/hw_random/virtio-rng\.ko$|/drivers/virtio/)' | \
-    xargs -r rm -f || true
-find "$modules_kernel_dir" -type d -empty -delete
+    -j"$(nproc)" Image.gz
+kernel_build_seconds="$((SECONDS - kernel_build_started))"
 
 initroot="$work_dir/initroot"
 alpine_prepare_apk "$work_dir/alpine-tools"
 alpine_extract_aarch64_root "$initroot"
 alpine_apk_add "$initroot" \
-    busybox e2fsprogs util-linux kmod
+    busybox e2fsprogs util-linux
 
 sudo install -m 0755 "$repo_root/init-podroid" "$initroot/init"
-sudo mkdir -p "$initroot/lib/modules"
-sudo cp -a "$modules_dir/lib/modules/." "$initroot/lib/modules/"
 sudo rm -rf \
     "$initroot/var/cache/apk"/* \
     "$initroot/tmp"/* \
@@ -68,3 +65,15 @@ cp "$kernel_dir/arch/arm64/boot/Image.gz" "$output_dir/vmlinuz-virt"
 
 test -s "$output_dir/vmlinuz-virt"
 test -s "$output_dir/initrd.img"
+if gzip -dc "$output_dir/initrd.img" | cpio -it 2>/dev/null | \
+    grep '^\./lib/modules' >/dev/null; then
+    echo "FATAL: monolithic initramfs unexpectedly contains /lib/modules" >&2
+    exit 1
+fi
+
+printf '%s\n' \
+    "kernelBuildSeconds=${kernel_build_seconds}" \
+    "kernelBytes=$(stat -c '%s' "$output_dir/vmlinuz-virt")" \
+    "initrdBytes=$(stat -c '%s' "$output_dir/initrd.img")" \
+    'kernelModules=0' \
+    > "$output_dir/kernel-metrics.properties"

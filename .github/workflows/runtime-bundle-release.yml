@@ -14,9 +14,9 @@ concurrency:
 
 jobs:
   bundle:
-    name: Assemble pinned runtime components
+    name: Assemble and boot-test pinned runtime components
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
 
@@ -39,7 +39,8 @@ jobs:
       - name: Install packaging dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends zstd
+          sudo apt-get install --yes --no-install-recommends \
+            curl e2fsprogs openssh-client qemu-system-arm sshpass zstd
 
       - name: Download and verify immutable components
         env:
@@ -65,6 +66,11 @@ jobs:
             components/nexus-boot/vmlinuz-virt \
             components/nexus-boot/initrd.img \
             "$runtime/assets/vm/"
+          if [ -s components/nexus-boot/kernel-metrics.properties ]; then
+            install -m 0644 \
+              components/nexus-boot/kernel-metrics.properties \
+              "$runtime/assets/vm/"
+          fi
           install -m 0755 \
             components/nexus-qemu/libqemu-system-aarch64.so \
             components/nexus-qemu/libslirp.so \
@@ -88,6 +94,9 @@ jobs:
 
       - name: Verify assembled runtime
         run: bash .github/scripts/verify-runtime-bundle.sh bundle/nexus-runtime
+
+      - name: Boot runtime and verify OpenCode, TUN/TAP and TBF
+        run: bash .github/scripts/smoke-test-runtime.sh bundle/nexus-runtime
 
       - name: Pack runtime bundle
         run: |
