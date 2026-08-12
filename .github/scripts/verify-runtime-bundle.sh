@@ -11,9 +11,12 @@ for file in libqemu-system-aarch64.so libslirp.so libpodroid-launcher.so; do
 done
 test ! -e "$runtime/jniLibs/arm64-v8a/libpodroid-bridge.so"
 test -s "$runtime/assets/vm/qemu/efi-virtio.rom"
-grep -q '^runtimeRootfsTag=v.*-rootfs$' "$runtime/runtime.properties"
-grep -q '^runtimeBootTag=v.*-boot$' "$runtime/runtime.properties"
-grep -q '^runtimeQemuTag=v.*-qemu$' "$runtime/runtime.properties"
+release="$(sed -n 's/^nexusReleaseVersion=//p' "$runtime/runtime.properties")"
+test -n "$release"
+grep -Fxq "tag=v${release}-bundle" "$runtime/runtime.properties"
+grep -Fxq "runtimeRootfsTag=v${release}-rootfs" "$runtime/runtime.properties"
+grep -Fxq "runtimeBootTag=v${release}-boot" "$runtime/runtime.properties"
+grep -Fxq "runtimeQemuTag=v${release}-qemu" "$runtime/runtime.properties"
 (
     cd "$runtime"
     sha256sum --check SHA256SUMS

@@ -23,11 +23,20 @@ jobs:
       - name: Read pinned kernel version
         id: versions
         run: |
+          bash .github/scripts/validate-release-tag.sh boot "$GITHUB_REF_NAME"
           kernel="$(sed -n 's/^runtimeKernelVersion=//p' runtime.properties)"
+          source="$(sed -n 's/^runtimeBootSourceTag=//p' runtime.lock)"
           test -n "$kernel"
           echo "kernel=$kernel" >> "$GITHUB_OUTPUT"
+          echo "source=$source" >> "$GITHUB_OUTPUT"
+          if [ -n "$source" ]; then
+            echo "promote=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "promote=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Install build dependencies
+        if: steps.versions.outputs.promote != 'true'
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends \
@@ -36,27 +45,55 @@ jobs:
             make qemu-user-static xz-utils zstd
           sudo update-binfmts --enable qemu-aarch64
 
+      - name: Install promotion dependency
+        if: steps.versions.outputs.promote == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends zstd
+
       - name: Build kernel and initramfs
+        if: steps.versions.outputs.promote != 'true'
         env:
           NEXUS_KERNEL_VERSION: ${{ steps.versions.outputs.kernel }}
         run: bash .github/scripts/build-boot-assets.sh ci-output/boot
 
       - name: Verify boot assets
+        if: steps.versions.outputs.promote != 'true'
         run: |
           test -s ci-output/boot/vmlinuz-virt
           test -s ci-output/boot/initrd.img
 
+      - name: Download verified boot source
+        if: steps.versions.outputs.promote == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_TAG: ${{ steps.versions.outputs.source }}
+        run: bash .github/scripts/download-runtime-component.sh boot "$SOURCE_TAG" ci-output/source
+
       - name: Pack immutable boot component
         env:
           KERNEL_VERSION: ${{ steps.versions.outputs.kernel }}
+          PROMOTE: ${{ steps.versions.outputs.promote }}
+          SOURCE_TAG: ${{ steps.versions.outputs.source }}
         run: |
           component=bundle/nexus-boot
           mkdir -p "$component"
-          install -m 0644 ci-output/boot/vmlinuz-virt ci-output/boot/initrd.img "$component/"
+          if [ "$PROMOTE" = true ]; then
+            source=ci-output/source/nexus-boot
+            grep -Fxq "runtimeKernelVersion=${KERNEL_VERSION}" "$source/component.properties"
+            install -m 0644 "$source/vmlinuz-virt" "$source/initrd.img" "$component/"
+            source_commit="$(sed -n 's/^commit=//p' "$source/component.properties")"
+          else
+            install -m 0644 ci-output/boot/vmlinuz-virt ci-output/boot/initrd.img "$component/"
+            SOURCE_TAG="$GITHUB_REF_NAME"
+            source_commit="$GITHUB_SHA"
+          fi
           printf '%s\n' \
             'component=boot' \
             "tag=${GITHUB_REF_NAME}" \
             "commit=${GITHUB_SHA}" \
+            "sourceTag=${SOURCE_TAG}" \
+            "sourceCommit=${source_commit}" \
             "runtimeKernelVersion=${KERNEL_VERSION}" \
             > "$component/component.properties"
           (

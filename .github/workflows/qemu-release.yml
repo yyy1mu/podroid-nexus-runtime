@@ -26,15 +26,25 @@ jobs:
       - name: Read pinned QEMU version
         id: versions
         run: |
+          bash .github/scripts/validate-release-tag.sh qemu "$GITHUB_REF_NAME"
           qemu="$(sed -n 's/^runtimeQemuVersion=//p' runtime.properties)"
+          source="$(sed -n 's/^runtimeQemuSourceTag=//p' runtime.lock)"
           test -n "$qemu"
           echo "qemu=$qemu" >> "$GITHUB_OUTPUT"
+          echo "source=$source" >> "$GITHUB_OUTPUT"
+          if [ -n "$source" ]; then
+            echo "promote=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "promote=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - uses: android-actions/setup-android@v4
+        if: steps.versions.outputs.promote != 'true'
         with:
           packages: ndk;${{ env.ANDROID_NDK_VERSION }}
 
       - name: Install build dependencies
+        if: steps.versions.outputs.promote != 'true'
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends \
@@ -44,7 +54,14 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/meson-venv"
           "$RUNNER_TEMP/meson-venv/bin/pip" install meson
 
+      - name: Install promotion dependency
+        if: steps.versions.outputs.promote == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends zstd
+
       - name: Build QEMU and launcher
+        if: steps.versions.outputs.promote != 'true'
         env:
           NEXUS_QEMU_VERSION: ${{ steps.versions.outputs.qemu }}
         run: |
@@ -53,19 +70,42 @@ jobs:
           bash .github/scripts/build-qemu.sh ci-output/qemu
 
       - name: Verify native artifacts
+        if: steps.versions.outputs.promote != 'true'
         run: bash .github/scripts/verify-qemu.sh ci-output/qemu
+
+      - name: Download verified QEMU source
+        if: steps.versions.outputs.promote == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_TAG: ${{ steps.versions.outputs.source }}
+        run: bash .github/scripts/download-runtime-component.sh qemu "$SOURCE_TAG" ci-output/source
 
       - name: Pack immutable QEMU component
         env:
           QEMU_VERSION: ${{ steps.versions.outputs.qemu }}
+          PROMOTE: ${{ steps.versions.outputs.promote }}
+          SOURCE_TAG: ${{ steps.versions.outputs.source }}
         run: |
           component=bundle/nexus-qemu
           mkdir -p "$component"
-          cp -R ci-output/qemu/. "$component/"
+          if [ "$PROMOTE" = true ]; then
+            source=ci-output/source/nexus-qemu
+            grep -Fxq "runtimeQemuVersion=${QEMU_VERSION}" "$source/component.properties"
+            cp -R "$source"/. "$component/"
+            rm -f "$component/component.properties" "$component/SHA256SUMS"
+            source_commit="$(sed -n 's/^commit=//p' "$source/component.properties")"
+          else
+            cp -R ci-output/qemu/. "$component/"
+            SOURCE_TAG="$GITHUB_REF_NAME"
+            source_commit="$GITHUB_SHA"
+          fi
+          bash .github/scripts/verify-qemu.sh "$component"
           printf '%s\n' \
             'component=qemu' \
             "tag=${GITHUB_REF_NAME}" \
             "commit=${GITHUB_SHA}" \
+            "sourceTag=${SOURCE_TAG}" \
+            "sourceCommit=${source_commit}" \
             "runtimeQemuVersion=${QEMU_VERSION}" \
             > "$component/component.properties"
           (

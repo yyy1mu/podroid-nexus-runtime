@@ -23,10 +23,15 @@ jobs:
       - name: Read component lock
         id: components
         run: |
+          release="$(bash .github/scripts/validate-release-tag.sh bundle "$GITHUB_REF_NAME")"
           rootfs="$(sed -n 's/^runtimeRootfsTag=//p' runtime.lock)"
           boot="$(sed -n 's/^runtimeBootTag=//p' runtime.lock)"
           qemu="$(sed -n 's/^runtimeQemuTag=//p' runtime.lock)"
           test -n "$rootfs" && test -n "$boot" && test -n "$qemu"
+          test "$rootfs" = "v${release}-rootfs"
+          test "$boot" = "v${release}-boot"
+          test "$qemu" = "v${release}-qemu"
+          echo "release=$release" >> "$GITHUB_OUTPUT"
           echo "rootfs=$rootfs" >> "$GITHUB_OUTPUT"
           echo "boot=$boot" >> "$GITHUB_OUTPUT"
           echo "qemu=$qemu" >> "$GITHUB_OUTPUT"
@@ -68,6 +73,7 @@ jobs:
           cp -R components/nexus-qemu/qemu/. "$runtime/assets/vm/qemu/"
           cp runtime.properties "$runtime/runtime.properties"
           printf '%s\n' \
+            "nexusReleaseVersion=${{ steps.components.outputs.release }}" \
             "tag=${GITHUB_REF_NAME}" \
             "commit=${GITHUB_SHA}" \
             "runtimeRootfsTag=${ROOTFS_TAG}" \

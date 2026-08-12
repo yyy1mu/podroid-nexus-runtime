@@ -31,13 +31,18 @@ nexus-runtime/
 
 ## Releases
 
-Only tags matching `v*` start a build. Components are independently versioned:
+Only tags matching `v*` start a build. `release.properties` is the single
+public version source. All artifacts in one release share that version:
 
-- `v*-rootfs` publishes Alpine and OpenCode;
-- `v*-boot` publishes the matching kernel and initramfs;
-- `v*-qemu` publishes Android QEMU, slirp, firmware, and the launcher;
-- `v*-bundle` reads `runtime.lock` and assembles those immutable releases
+- `vX.Y.Z-rootfs` publishes Alpine and OpenCode;
+- `vX.Y.Z-boot` publishes the matching kernel and initramfs;
+- `vX.Y.Z-qemu` publishes Android QEMU, slirp, firmware, and the launcher;
+- `vX.Y.Z-bundle` reads `runtime.lock` and assembles those immutable releases
   without compiling native code again.
+
+An unchanged component may be promoted from its previous verified release by
+setting its `*SourceTag` in `runtime.lock`; its binaries are copied and checked,
+not rebuilt. Clear that source tag only when the component itself changes.
 
 Every component archive has both an archive checksum and an internal manifest.
 The assembled runtime records all three component tags in `runtime.properties`,

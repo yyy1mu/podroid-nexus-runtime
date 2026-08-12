@@ -23,15 +23,24 @@ jobs:
       - name: Read pinned versions
         id: versions
         run: |
+          bash .github/scripts/validate-release-tag.sh rootfs "$GITHUB_REF_NAME"
           system="$(sed -n 's/^runtimeSystemVersion=//p' runtime.properties)"
           opencode="$(sed -n 's/^runtimeOpenCodeVersion=//p' runtime.properties)"
           alpine="$(sed -n 's/^runtimeAlpineVersion=//p' runtime.properties)"
+          source="$(sed -n 's/^runtimeRootfsSourceTag=//p' runtime.lock)"
           test -n "$system" && test -n "$opencode" && test -n "$alpine"
           echo "system=$system" >> "$GITHUB_OUTPUT"
           echo "opencode=$opencode" >> "$GITHUB_OUTPUT"
           echo "alpine=$alpine" >> "$GITHUB_OUTPUT"
+          echo "source=$source" >> "$GITHUB_OUTPUT"
+          if [ -n "$source" ]; then
+            echo "promote=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "promote=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Install build dependencies
+        if: steps.versions.outputs.promote != 'true'
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends \
@@ -39,7 +48,14 @@ jobs:
             gcc-aarch64-linux-gnu openssl qemu-user-static squashfs-tools zstd
           sudo update-binfmts --enable qemu-aarch64
 
+      - name: Install promotion dependency
+        if: steps.versions.outputs.promote == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends zstd
+
       - name: Build rootfs
+        if: steps.versions.outputs.promote != 'true'
         env:
           ALPINE_RELEASE: ${{ steps.versions.outputs.alpine }}
           NEXUS_RUNTIME_SYSTEM_VERSION: ${{ steps.versions.outputs.system }}
@@ -47,21 +63,44 @@ jobs:
         run: bash .github/scripts/build-rootfs.sh ci-output/rootfs
 
       - name: Verify rootfs and execute OpenCode
+        if: steps.versions.outputs.promote != 'true'
         run: bash .github/scripts/verify-runtime-rootfs.sh ci-output/rootfs/alpine-rootfs.squashfs
+
+      - name: Download verified rootfs source
+        if: steps.versions.outputs.promote == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_TAG: ${{ steps.versions.outputs.source }}
+        run: bash .github/scripts/download-runtime-component.sh rootfs "$SOURCE_TAG" ci-output/source
 
       - name: Pack immutable rootfs component
         env:
           SYSTEM_VERSION: ${{ steps.versions.outputs.system }}
           OPENCODE_VERSION: ${{ steps.versions.outputs.opencode }}
           ALPINE_VERSION: ${{ steps.versions.outputs.alpine }}
+          PROMOTE: ${{ steps.versions.outputs.promote }}
+          SOURCE_TAG: ${{ steps.versions.outputs.source }}
         run: |
           component=bundle/nexus-rootfs
           mkdir -p "$component"
-          install -m 0644 ci-output/rootfs/alpine-rootfs.squashfs "$component/"
+          if [ "$PROMOTE" = true ]; then
+            source=ci-output/source/nexus-rootfs
+            grep -Fxq "runtimeSystemVersion=${SYSTEM_VERSION}" "$source/component.properties"
+            grep -Fxq "runtimeOpenCodeVersion=${OPENCODE_VERSION}" "$source/component.properties"
+            grep -Fxq "runtimeAlpineVersion=${ALPINE_VERSION}" "$source/component.properties"
+            install -m 0644 "$source/alpine-rootfs.squashfs" "$component/"
+            source_commit="$(sed -n 's/^commit=//p' "$source/component.properties")"
+          else
+            install -m 0644 ci-output/rootfs/alpine-rootfs.squashfs "$component/"
+            SOURCE_TAG="$GITHUB_REF_NAME"
+            source_commit="$GITHUB_SHA"
+          fi
           printf '%s\n' \
             'component=rootfs' \
             "tag=${GITHUB_REF_NAME}" \
             "commit=${GITHUB_SHA}" \
+            "sourceTag=${SOURCE_TAG}" \
+            "sourceCommit=${source_commit}" \
             "runtimeSystemVersion=${SYSTEM_VERSION}" \
             "runtimeOpenCodeVersion=${OPENCODE_VERSION}" \
             "runtimeAlpineVersion=${ALPINE_VERSION}" \
