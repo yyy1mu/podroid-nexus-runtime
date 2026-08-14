@@ -5,6 +5,8 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 output_dir="${1:?output directory is required}"
 system_version="${NEXUS_RUNTIME_SYSTEM_VERSION:?NEXUS_RUNTIME_SYSTEM_VERSION is required}"
 opencode_version="${NEXUS_OPENCODE_VERSION:?NEXUS_OPENCODE_VERSION is required}"
+iwan_version="${NEXUS_IWAN_VERSION:?NEXUS_IWAN_VERSION is required}"
+iwan_sha256="${NEXUS_IWAN_SHA256:?NEXUS_IWAN_SHA256 is required}"
 work_dir="$(mktemp -d)"
 trap 'sudo rm -rf "$work_dir"' EXIT
 
@@ -42,7 +44,10 @@ sudo env \
     ALPINE_VERSION="$ALPINE_RELEASE" \
     SYSTEM_VERSION="$system_version" \
     OPENCODE_VERSION="$opencode_version" \
+    IWAN_VERSION="$iwan_version" \
+    IWAN_SHA256="$iwan_sha256" \
     ALPINE_MIRROR="$ALPINE_MIRROR" \
+    GUEST_ALPINE_MIRROR="${NEXUS_GUEST_ALPINE_MIRROR:-https://mirrors.ustc.edu.cn/alpine}" \
     ROOTFS="$rootfs" \
     WORK_DIR="$repo_root/build-rootfs" \
     APK_BIN="$ALPINE_APK" \

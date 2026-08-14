@@ -31,6 +31,26 @@ version="$(timeout 180 qemu-aarch64-static -L "$rootfs" "$opencode" --version)"
 test -n "$version"
 echo "Verified OpenCode $version"
 
+iwan="$rootfs/usr/local/bin/iwan-client"
+test -x "$iwan"
+aarch64-linux-gnu-readelf -h "$iwan" | grep -q 'Machine:.*AArch64'
+if aarch64-linux-gnu-readelf -l "$iwan" | grep -q INTERP; then
+    echo "iWAN client is unexpectedly dynamically linked" >&2
+    exit 1
+fi
+iwan_version="$(timeout 30 qemu-aarch64-static "$iwan" --version)"
+test -n "$iwan_version"
+echo "Verified $iwan_version"
+
+repositories="$rootfs/etc/apk/repositories"
+test "$(wc -l < "$repositories")" -eq 2
+grep -Eq '^https://mirrors\.ustc\.edu\.cn/alpine/v[0-9]+\.[0-9]+/main$' "$repositories"
+grep -Eq '^https://mirrors\.ustc\.edu\.cn/alpine/v[0-9]+\.[0-9]+/community$' "$repositories"
+if grep -Ev '^https://mirrors\.ustc\.edu\.cn/alpine/' "$repositories" | grep -q .; then
+    echo "Distributed rootfs contains a non-USTC Alpine repository" >&2
+    exit 1
+fi
+
 opencode_service="$rootfs/etc/init.d/podroid-opencode"
 ready_service="$rootfs/etc/init.d/podroid-ready"
 bootstrap_service="$rootfs/etc/init.d/podroid-bootstrap"

@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   rootfs:
-    name: Build Alpine and OpenCode rootfs
+    name: Build Alpine, OpenCode and iWAN rootfs
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
@@ -27,11 +27,16 @@ jobs:
           system="$(sed -n 's/^runtimeSystemVersion=//p' runtime.properties)"
           opencode="$(sed -n 's/^runtimeOpenCodeVersion=//p' runtime.properties)"
           alpine="$(sed -n 's/^runtimeAlpineVersion=//p' runtime.properties)"
+          iwan="$(sed -n 's/^runtimeIwanVersion=//p' runtime.properties)"
+          iwan_sha256="$(sed -n 's/^runtimeIwanSha256=//p' runtime.properties)"
           source="$(sed -n 's/^runtimeRootfsSourceTag=//p' runtime.lock)"
           test -n "$system" && test -n "$opencode" && test -n "$alpine"
+          test -n "$iwan" && test -n "$iwan_sha256"
           echo "system=$system" >> "$GITHUB_OUTPUT"
           echo "opencode=$opencode" >> "$GITHUB_OUTPUT"
           echo "alpine=$alpine" >> "$GITHUB_OUTPUT"
+          echo "iwan=$iwan" >> "$GITHUB_OUTPUT"
+          echo "iwan_sha256=$iwan_sha256" >> "$GITHUB_OUTPUT"
           echo "source=$source" >> "$GITHUB_OUTPUT"
           if [ -n "$source" ]; then
             echo "promote=true" >> "$GITHUB_OUTPUT"
@@ -45,7 +50,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends \
             binfmt-support binutils-aarch64-linux-gnu ca-certificates curl \
-            gcc-aarch64-linux-gnu openssl qemu-user-static squashfs-tools zstd
+            gcc-aarch64-linux-gnu openssl qemu-user-static squashfs-tools unzip zstd
           sudo update-binfmts --enable qemu-aarch64
 
       - name: Install promotion dependency
@@ -60,9 +65,11 @@ jobs:
           ALPINE_RELEASE: ${{ steps.versions.outputs.alpine }}
           NEXUS_RUNTIME_SYSTEM_VERSION: ${{ steps.versions.outputs.system }}
           NEXUS_OPENCODE_VERSION: ${{ steps.versions.outputs.opencode }}
+          NEXUS_IWAN_VERSION: ${{ steps.versions.outputs.iwan }}
+          NEXUS_IWAN_SHA256: ${{ steps.versions.outputs.iwan_sha256 }}
         run: bash .github/scripts/build-rootfs.sh ci-output/rootfs
 
-      - name: Verify rootfs and execute OpenCode
+      - name: Verify rootfs and execute OpenCode and iWAN
         if: steps.versions.outputs.promote != 'true'
         run: bash .github/scripts/verify-runtime-rootfs.sh ci-output/rootfs/alpine-rootfs.squashfs
 
@@ -78,6 +85,8 @@ jobs:
           SYSTEM_VERSION: ${{ steps.versions.outputs.system }}
           OPENCODE_VERSION: ${{ steps.versions.outputs.opencode }}
           ALPINE_VERSION: ${{ steps.versions.outputs.alpine }}
+          IWAN_VERSION: ${{ steps.versions.outputs.iwan }}
+          IWAN_SHA256: ${{ steps.versions.outputs.iwan_sha256 }}
           PROMOTE: ${{ steps.versions.outputs.promote }}
           SOURCE_TAG: ${{ steps.versions.outputs.source }}
         run: |
@@ -88,6 +97,8 @@ jobs:
             grep -Fxq "runtimeSystemVersion=${SYSTEM_VERSION}" "$source/component.properties"
             grep -Fxq "runtimeOpenCodeVersion=${OPENCODE_VERSION}" "$source/component.properties"
             grep -Fxq "runtimeAlpineVersion=${ALPINE_VERSION}" "$source/component.properties"
+            grep -Fxq "runtimeIwanVersion=${IWAN_VERSION}" "$source/component.properties"
+            grep -Fxq "runtimeIwanSha256=${IWAN_SHA256}" "$source/component.properties"
             install -m 0644 "$source/alpine-rootfs.squashfs" "$component/"
             source_commit="$(sed -n 's/^commit=//p' "$source/component.properties")"
           else
@@ -104,6 +115,8 @@ jobs:
             "runtimeSystemVersion=${SYSTEM_VERSION}" \
             "runtimeOpenCodeVersion=${OPENCODE_VERSION}" \
             "runtimeAlpineVersion=${ALPINE_VERSION}" \
+            "runtimeIwanVersion=${IWAN_VERSION}" \
+            "runtimeIwanSha256=${IWAN_SHA256}" \
             > "$component/component.properties"
           (
             cd "$component"

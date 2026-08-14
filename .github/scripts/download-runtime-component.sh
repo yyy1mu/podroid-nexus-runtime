@@ -95,6 +95,8 @@ if [[ "$tag" == *-bundle ]]; then
                 sed -n \
                     -e 's/^runtimeOpenCodeVersion=/runtimeOpenCodeVersion=/p' \
                     -e 's/^runtimeAlpineVersion=/runtimeAlpineVersion=/p' \
+                    -e 's/^runtimeIwanVersion=/runtimeIwanVersion=/p' \
+                    -e 's/^runtimeIwanSha256=/runtimeIwanSha256=/p' \
                     "$runtime/runtime.properties"
             )"
             ;;

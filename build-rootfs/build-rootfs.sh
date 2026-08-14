@@ -4,6 +4,9 @@ WORK_DIR="${WORK_DIR:-/work}"
 ROOTFS="${ROOTFS:-$WORK_DIR/rootfs}"
 APK_BIN="${APK_BIN:-apk}"
 ALPINE_MIRROR="${ALPINE_MIRROR:-https://mirrors.ustc.edu.cn/alpine}"
+GUEST_ALPINE_MIRROR="${GUEST_ALPINE_MIRROR:-https://mirrors.ustc.edu.cn/alpine}"
+ALPINE_MIRROR="${ALPINE_MIRROR%/}"
+GUEST_ALPINE_MIRROR="${GUEST_ALPINE_MIRROR%/}"
 
 # ALPINE_VERSION is pinned by the release workflow (full release like 3.24.1).
 # Strip the patch component to get the major branch (e.g. 3.24) used in repo URLs.
@@ -84,6 +87,21 @@ cp /tmp/opencode "$ROOTFS/usr/local/bin/opencode"
 chmod 0755 "$ROOTFS/usr/local/bin/opencode"
 rm -f /tmp/opencode.tar.gz /tmp/opencode
 
+# USTC iWAN manual client (static musl aarch64). Android already performs the
+# OIDC/controller flow and stores the decrypted line credentials, so the guest
+# needs the manual client rather than a second copy of iwan-client-oidc.
+: "${IWAN_VERSION:?IWAN_VERSION must be set}"
+: "${IWAN_SHA256:?IWAN_SHA256 must be set}"
+iwan_archive=/tmp/iwan-client-aarch64-musl.zip
+curl --fail --location --retry 8 --retry-all-errors --retry-delay 5 \
+    --output "$iwan_archive" \
+    "https://github.com/yyy1mu/ustc-iwan/releases/download/${IWAN_VERSION}/iwan-client-aarch64-musl.zip"
+printf '%s  %s\n' "$IWAN_SHA256" "$iwan_archive" | sha256sum --check --status
+unzip -p "$iwan_archive" iwan-client-aarch64-musl \
+    > "$ROOTFS/usr/local/bin/iwan-client"
+chmod 0755 "$ROOTFS/usr/local/bin/iwan-client"
+rm -f "$iwan_archive"
+
 mkdir -p "$ROOTFS/etc/conf.d"
 cp "$WORK_DIR/files/etc/conf.d/podroid" "$ROOTFS/etc/conf.d/"
 mkdir -p "$ROOTFS/etc/podroid"
@@ -136,3 +154,11 @@ done
 for svc in cgroups modules hwclock swclock urandom networking sysctl bootmisc syslog; do
     rm -f "$ROOTFS/etc/runlevels"/*/"$svc"
 done
+
+# GitHub Actions assembles the image through ALPINE_MIRROR (the official CDN by
+# default). The distributed guest switches only after all packages are
+# installed, so users get the USTC mirror without making CI depend on it.
+cat > "$ROOTFS/etc/apk/repositories" <<EOF
+${GUEST_ALPINE_MIRROR}/v${ALPINE_BRANCH}/main
+${GUEST_ALPINE_MIRROR}/v${ALPINE_BRANCH}/community
+EOF

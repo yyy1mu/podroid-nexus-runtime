@@ -9,6 +9,7 @@ The repository publishes immutable runtime bundles containing:
 - an AArch64 Linux kernel and initramfs;
 - a minimal Alpine Linux squashfs;
 - the musl AArch64 OpenCode server and all of its runtime libraries;
+- the static musl AArch64 USTC iWAN client;
 - Android ARM64 QEMU TCG, slirp, firmware/keymaps, and the launcher.
 
 It intentionally excludes AVF, VNC, libusb, the Android host bridge, desktop
@@ -84,6 +85,12 @@ The guest is not marked ready until:
    TCP port 4096.
 
 The Android host maps guest port 4096 to loopback port 14096.
+
+The guest also includes `iwan-client` from the pinned USTC iWAN release. Nexus
+performs OIDC and protects the resulting line credentials in Android Keystore;
+no user credential is baked into the immutable rootfs. CI installs Alpine
+packages through the official CDN, then changes the distributed guest's
+`/etc/apk/repositories` to `https://mirrors.ustc.edu.cn/alpine/`.
 
 ## License
 

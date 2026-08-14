@@ -142,6 +142,10 @@ sshpass -p podroid ssh "${ssh_options[@]}" root@127.0.0.1 'set -eu
     zcat /proc/config.gz | grep -Fxq "CONFIG_9P_FS=y"
     zcat /proc/config.gz | grep -Fxq "# CONFIG_MODULES is not set"
     test "$(find /lib/modules -name "*.ko" -print 2>/dev/null | wc -l)" -eq 0
+    test -x /usr/local/bin/iwan-client
+    iwan-client --version | grep -q "iwan-client"
+    grep -Eq "^https://mirrors\\.ustc\\.edu\\.cn/alpine/v[0-9]+\\.[0-9]+/main$" /etc/apk/repositories
+    grep -Eq "^https://mirrors\\.ustc\\.edu\\.cn/alpine/v[0-9]+\\.[0-9]+/community$" /etc/apk/repositories
     mountpoint -q /mnt/downloads
     grep -Fxq "host-to-guest" /mnt/downloads/from-android.txt
     printf "guest-to-host\n" > /mnt/downloads/from-nexus.txt
@@ -150,4 +154,4 @@ sshpass -p podroid ssh "${ssh_options[@]}" root@127.0.0.1 'set -eu
 
 grep -Fxq 'guest-to-host' "$downloads/from-nexus.txt"
 
-printf 'Boot smoke test passed: OpenCode healthy; Downloads 9P, TUN/TAP and TBF operational.\n'
+printf 'Boot smoke test passed: OpenCode and iWAN available; USTC APK mirror, Downloads 9P, TUN/TAP and TBF operational.\n'

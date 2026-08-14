@@ -16,6 +16,8 @@ if [ -e "$runtime/assets/vm/kernel-metrics.properties" ]; then
 fi
 release="$(sed -n 's/^nexusReleaseVersion=//p' "$runtime/runtime.properties")"
 test -n "$release"
+grep -Eq '^runtimeIwanVersion=v[0-9]+\.[0-9]+\.[0-9]+$' "$runtime/runtime.properties"
+grep -Eq '^runtimeIwanSha256=[0-9a-f]{64}$' "$runtime/runtime.properties"
 grep -Fxq "tag=v${release}-bundle" "$runtime/runtime.properties"
 grep -Fxq "runtimeRootfsTag=v${release}-rootfs" "$runtime/runtime.properties"
 grep -Fxq "runtimeBootTag=v${release}-boot" "$runtime/runtime.properties"

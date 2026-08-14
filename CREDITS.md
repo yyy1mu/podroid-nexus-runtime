@@ -11,6 +11,7 @@ remains under its own license:
 - [Alpine Linux](https://alpinelinux.org/) — guest userspace, per-package
   licenses.
 - [OpenCode](https://github.com/anomalyco/opencode) — AI coding server.
+- [USTC iWAN](https://github.com/yyy1mu/ustc-iwan) — campus-network client.
 - [QEMU](https://www.qemu.org/) — Android ARM64 machine emulator, GPL-2.0 and
   other licenses documented upstream.
 - [libslirp](https://gitlab.freedesktop.org/slirp/libslirp) — QEMU user-mode
