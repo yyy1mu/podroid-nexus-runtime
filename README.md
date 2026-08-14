@@ -60,9 +60,11 @@ The guest kernel is a monolithic QEMU `virt` build (`CONFIG_MODULES=n`). The
 workflow starts from the upstream Arm64 virtualization config, disables every
 inherited module, and compiles only `Image.gz`; the initramfs contains no
 `/lib/modules`. USB, Wi-Fi, Bluetooth, sound, display, physical Arm SoCs,
-KVM/Xen, container networking, 9P, and unused power-management stacks are
-excluded. Virtio block/network/console, overlay/ext4/squashfs, zram, TUN/TAP,
-and `tc tbf` remain built in.
+KVM/Xen, container networking, and unused power-management stacks are excluded.
+Virtio block/network/console/9P, overlay/ext4/squashfs, zram, TUN/TAP, and
+`tc tbf` remain built in. When the Android app presents the optional
+`downloads` 9P mount tag, the rootfs mounts it at `/mnt/downloads`; otherwise
+the boot path is unchanged.
 
 KASLR and low-cost userspace hardening remain enabled. The Android QEMU command
 line uses `mitigations=off` for the performance-first TCG runtime. Before a

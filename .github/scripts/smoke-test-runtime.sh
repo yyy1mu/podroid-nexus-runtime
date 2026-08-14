@@ -16,6 +16,7 @@ work_dir="$(mktemp -d)"
 serial_log="$work_dir/serial.log"
 qemu_log="$work_dir/qemu.log"
 persist="$work_dir/persist.img"
+downloads="$work_dir/downloads"
 qemu_pid=""
 
 show_diagnostics() {
@@ -36,6 +37,8 @@ trap cleanup EXIT
 
 truncate -s 1G "$persist"
 mkfs.ext4 -q -F "$persist"
+mkdir -p "$downloads"
+printf 'host-to-guest\n' > "$downloads/from-android.txt"
 
 qemu-system-aarch64 \
     -machine virt,gic-version=3 \
@@ -50,6 +53,8 @@ qemu-system-aarch64 \
     -device virtio-blk-pci,drive=drive1,romfile= \
     -drive "file=${rootfs},if=none,id=drive2,format=raw,readonly=on" \
     -device virtio-blk-pci,drive=drive2,romfile= \
+    -fsdev "local,id=downloads_fs,path=${downloads},security_model=none" \
+    -device virtio-9p-pci,fsdev=downloads_fs,mount_tag=downloads,romfile= \
     -netdev user,id=net0,ipv6=off,hostfwd=tcp:127.0.0.1:19922-:22,hostfwd=tcp:127.0.0.1:14096-:4096 \
     -device virtio-net-pci,netdev=net0,romfile= \
     -serial "file:${serial_log}" \
@@ -132,9 +137,17 @@ sshpass -p podroid ssh "${ssh_options[@]}" root@127.0.0.1 'set -eu
     tc qdisc show dev "$netif" | grep -q "qdisc tbf"
     zcat /proc/config.gz | grep -Fxq "CONFIG_TUN=y"
     zcat /proc/config.gz | grep -Fxq "CONFIG_NET_SCH_TBF=y"
+    zcat /proc/config.gz | grep -Fxq "CONFIG_NET_9P=y"
+    zcat /proc/config.gz | grep -Fxq "CONFIG_NET_9P_VIRTIO=y"
+    zcat /proc/config.gz | grep -Fxq "CONFIG_9P_FS=y"
     zcat /proc/config.gz | grep -Fxq "# CONFIG_MODULES is not set"
     test "$(find /lib/modules -name "*.ko" -print 2>/dev/null | wc -l)" -eq 0
+    mountpoint -q /mnt/downloads
+    grep -Fxq "host-to-guest" /mnt/downloads/from-android.txt
+    printf "guest-to-host\n" > /mnt/downloads/from-nexus.txt
     ip tuntap del dev nexus-tun0 mode tun
     ip tuntap del dev nexus-tap0 mode tap'
 
-printf 'Boot smoke test passed: OpenCode healthy, TUN/TAP and TBF operational.\n'
+grep -Fxq 'guest-to-host' "$downloads/from-nexus.txt"
+
+printf 'Boot smoke test passed: OpenCode healthy; Downloads 9P, TUN/TAP and TBF operational.\n'

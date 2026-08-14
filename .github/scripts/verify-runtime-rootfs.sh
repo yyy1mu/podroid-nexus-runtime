@@ -59,11 +59,14 @@ for package in iptables ip6tables nftables bridge-utils kmod; do
         exit 1
     fi
 done
-if grep -Eq '(^|[[:space:]])(depmod|modprobe)([[:space:]]|$)|mount -t 9p|mount -t cgroup2' \
+if grep -Eq '(^|[[:space:]])(depmod|modprobe)([[:space:]]|$)|mount -t cgroup2' \
     "$bootstrap_service"; then
-    echo "Legacy module, 9P, or cgroup bootstrap logic remains" >&2
+    echo "Legacy module or cgroup bootstrap logic remains" >&2
     exit 1
 fi
+grep -Fq "/sys/bus/virtio/drivers/9pnet_virtio/virtio*/mount_tag" "$bootstrap_service"
+grep -Fq 'mount -t 9p' "$bootstrap_service"
+grep -Fq 'downloads /mnt/downloads' "$bootstrap_service"
 grep -Fq 'tc qdisc replace' "$network_service"
 if grep -F 'tc qdisc replace' "$network_service" | grep -Fq '|| true'; then
     echo "TBF setup still hides kernel/configuration failures" >&2

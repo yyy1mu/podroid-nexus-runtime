@@ -95,7 +95,7 @@ jobs:
       - name: Verify assembled runtime
         run: bash .github/scripts/verify-runtime-bundle.sh bundle/nexus-runtime
 
-      - name: Boot runtime and verify OpenCode, TUN/TAP and TBF
+      - name: Boot runtime and verify OpenCode, Downloads 9P, TUN/TAP and TBF
         run: bash .github/scripts/smoke-test-runtime.sh bundle/nexus-runtime
 
       - name: Pack runtime bundle
